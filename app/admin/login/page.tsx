@@ -32,6 +32,7 @@ export default function AdminLoginPage() {
       })
 
       const data = await res.json()
+      console.log("[v0] Admin login response:", { status: res.ok, data })
 
       if (!res.ok) {
         setError(data.error || "Login failed")
@@ -39,8 +40,11 @@ export default function AdminLoginPage() {
         return
       }
 
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      console.log("[v0] Redirecting to admin dashboard")
       router.push("/admin")
     } catch (err) {
+      console.log("[v0] Login error:", err)
       setError("An error occurred. Please try again.")
       setLoading(false)
     }
