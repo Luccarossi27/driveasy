@@ -9,6 +9,21 @@ import { Badge } from "@/components/ui/badge"
 import { ArrowLeft, Car, Phone, Mail, FileText, Shield } from "lucide-react"
 import { DocumentReviewActions } from "@/components/admin/document-review-actions"
 
+async function verifyAdmin(sessionToken: string) {
+  const sql = neon(process.env.DATABASE_URL!)
+
+  const sessions = await sql`
+    SELECT u.id, u.role 
+    FROM sessions s 
+    JOIN users u ON s.user_id = u.id 
+    WHERE s.token = ${sessionToken} 
+    AND s.expires_at > NOW()
+    AND u.role = 'admin'
+  `
+
+  return sessions.length > 0
+}
+
 async function getInstructorDetails(id: string) {
   const sql = neon(process.env.DATABASE_URL!)
 
@@ -38,7 +53,12 @@ export default async function InstructorVerificationPage({ params }: { params: P
   const sessionToken = cookieStore.get("session")?.value
 
   if (!sessionToken) {
-    redirect("/auth/login")
+    redirect("/admin/login")
+  }
+
+  const isAdmin = await verifyAdmin(sessionToken)
+  if (!isAdmin) {
+    redirect("/admin/login")
   }
 
   const data = await getInstructorDetails(id)

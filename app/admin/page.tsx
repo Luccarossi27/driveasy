@@ -4,8 +4,24 @@ import { neon } from "@neondatabase/serverless"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, FileCheck, Clock, CheckCircle } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Users, FileCheck, Clock, CheckCircle, LogOut } from "lucide-react"
 import Link from "next/link"
+
+async function verifyAdmin(sessionToken: string) {
+  const sql = neon(process.env.DATABASE_URL!)
+
+  const sessions = await sql`
+    SELECT u.id, u.role, u.email 
+    FROM sessions s 
+    JOIN users u ON s.user_id = u.id 
+    WHERE s.token = ${sessionToken} 
+    AND s.expires_at > NOW()
+    AND u.role = 'admin'
+  `
+
+  return sessions.length > 0 ? sessions[0] : null
+}
 
 async function getAdminStats() {
   const sql = neon(process.env.DATABASE_URL!)
@@ -35,12 +51,16 @@ async function getAdminStats() {
 }
 
 export default async function AdminDashboard() {
-  // Simple admin check - in production you'd verify admin role from session
   const cookieStore = await cookies()
   const sessionToken = cookieStore.get("session")?.value
 
   if (!sessionToken) {
-    redirect("/auth/login")
+    redirect("/admin/login")
+  }
+
+  const admin = await verifyAdmin(sessionToken)
+  if (!admin) {
+    redirect("/admin/login")
   }
 
   const stats = await getAdminStats()
@@ -48,9 +68,17 @@ export default async function AdminDashboard() {
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-          <p className="text-muted-foreground">Manage instructor verifications and platform settings</p>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+            <p className="text-muted-foreground">Welcome, {admin.email}</p>
+          </div>
+          <form action="/api/auth/logout" method="POST">
+            <Button variant="outline" type="submit">
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </Button>
+          </form>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
