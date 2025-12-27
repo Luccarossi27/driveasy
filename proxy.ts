@@ -3,12 +3,11 @@ import { type NextRequest, NextResponse } from "next/server"
 export async function proxy(request: NextRequest) {
   const token = request.cookies.get("drivecoach_session")?.value
 
-  // Protected routes
-  const protectedRoutes = ["/dashboard", "/portal", "/onboarding"]
+  const protectedRoutes = ["/dashboard", "/portal", "/onboarding", "/admin"]
   const isProtectedRoute = protectedRoutes.some((route) => request.nextUrl.pathname.startsWith(route))
 
   if (isProtectedRoute && !token) {
-    return NextResponse.redirect(new URL("/auth/login", request.url))
+    return NextResponse.redirect(new URL("/admin/login", request.url))
   }
 
   // Redirect authenticated users away from auth pages
@@ -23,5 +22,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/portal/:path*", "/onboarding/:path*", "/auth/:path*"],
+  matcher: ["/dashboard/:path*", "/portal/:path*", "/onboarding/:path*", "/auth/:path*", "/admin/:path*"],
 }
