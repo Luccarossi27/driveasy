@@ -5,13 +5,6 @@ import { Button } from "@/components/ui/button"
 import { CreditCard, AlertCircle, CheckCircle2, Download, Package, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-interface Student {
-  id: string
-  name: string
-  balance: number
-  lessonsCompleted: number
-}
-
 const paymentHistory = [
   { id: "1", amount: 68, date: "2024-12-20", description: "2-hour lesson", status: "paid" },
   { id: "2", amount: 170, date: "2024-12-10", description: "5-lesson package", status: "paid" },
@@ -26,8 +19,9 @@ const packages = [
   { id: "3", name: "10 Lesson Package", hours: 20, price: 600, savings: 80 },
 ]
 
-export default function StudentPaymentsClient() {
-  const [student, setStudent] = useState<Student | null>(null)
+export default function PaymentsPageClient() {
+  const [balance, setBalance] = useState(0)
+  const [lessonsCompleted, setLessonsCompleted] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -36,7 +30,9 @@ export default function StudentPaymentsClient() {
         const res = await fetch("/api/auth/verify")
         if (res.ok) {
           const data = await res.json()
-          setStudent(data.user)
+          // Safely extract with defaults
+          setBalance(data.user?.balance ?? 0)
+          setLessonsCompleted(data.user?.lessonsCompleted ?? 0)
         }
       } catch (error) {
         console.error("Failed to fetch student:", error)
@@ -54,9 +50,6 @@ export default function StudentPaymentsClient() {
       </div>
     )
   }
-
-  const balance = student?.balance ?? 0
-  const lessonsCompleted = student?.lessonsCompleted ?? 0
 
   return (
     <div className="space-y-6 py-4">
