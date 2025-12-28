@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Elements } from "@stripe/react-stripe-js"
 import { loadStripe } from "@stripe/stripe-js"
@@ -24,39 +24,48 @@ export function CheckoutPageClient() {
 
   const selectedPackage = packageId ? DEFAULT_PACKAGES.find((p) => p.id === packageId) : null
 
-  const initializePayment = async () => {
-    try {
-      setLoading(true)
+  useEffect(() => {
+    const initializePayment = async () => {
+      try {
+        console.log("[v0] Initializing payment with:", { packageId, instructorId, selectedPackage })
 
-      if (!selectedPackage || !instructorId || !packageId) {
-        throw new Error("Missing payment details")
+        if (!selectedPackage || !instructorId || !packageId) {
+          setError("Missing payment details. Please go back and try again.")
+          setLoading(false)
+          return
+        }
+
+        const res = await fetch("/api/payment/create-payment-intent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            packageId,
+            instructorId,
+            amountCents: selectedPackage.priceInPence,
+          }),
+        })
+
+        console.log("[v0] Payment API response status:", res.status)
+        const data = await res.json()
+        console.log("[v0] Payment API response:", data)
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to initialize payment")
+        }
+
+        setClientSecret(data.clientSecret)
+        setInstructorName(data.instructorName)
+      } catch (err) {
+        console.error("[v0] Payment init error:", err)
+        const message = err instanceof Error ? err.message : "Error initializing payment"
+        setError(message)
+      } finally {
+        setLoading(false)
       }
-
-      const res = await fetch("/api/payment/create-payment-intent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          packageId,
-          instructorId,
-          amountCents: selectedPackage.priceInPence,
-        }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to initialize payment")
-      }
-
-      setClientSecret(data.clientSecret)
-      setInstructorName(data.instructorName)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Error initializing payment"
-      setError(message)
-    } finally {
-      setLoading(false)
     }
-  }
+
+    initializePayment()
+  }, [packageId, instructorId, selectedPackage])
 
   const handlePaymentSuccess = () => {
     router.push("/portal/book?success=true")
@@ -77,27 +86,34 @@ export function CheckoutPageClient() {
     )
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+          <p className="text-muted-foreground">Initializing payment...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center space-y-4">
+          <p className="text-destructive">{error}</p>
+          <Button onClick={() => router.back()}>Go Back</Button>
+        </div>
+      </div>
+    )
+  }
+
   if (!clientSecret) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center space-y-4">
-          {loading ? (
-            <>
-              <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-              <p className="text-muted-foreground">Initializing payment...</p>
-            </>
-          ) : (
-            <>
-              {error ? (
-                <>
-                  <p className="text-destructive">{error}</p>
-                  <Button onClick={() => router.back()}>Go Back</Button>
-                </>
-              ) : (
-                <Button onClick={initializePayment}>Start Payment</Button>
-              )}
-            </>
-          )}
+          <p className="text-muted-foreground">Unable to initialize payment</p>
+          <Button onClick={() => router.back()}>Go Back</Button>
         </div>
       </div>
     )
