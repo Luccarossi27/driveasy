@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-
+import { DriveasyLogo } from "@/components/driveasy-logo"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -61,8 +61,11 @@ export default function LoginPage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
+          <div className="flex justify-center mb-4">
+            <DriveasyLogo size="md" />
+          </div>
           <CardTitle>Welcome Back</CardTitle>
-          <CardDescription>Sign in to your DriveCoach account</CardDescription>
+          <CardDescription>Sign in to your Driveasy account</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">

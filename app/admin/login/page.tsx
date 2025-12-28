@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Shield, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
+import { DriveasyLogo } from "@/components/driveasy-logo"
 
 export default function AdminLoginPage() {
   const router = useRouter()
@@ -54,10 +55,10 @@ export default function AdminLoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
-            <Shield className="h-6 w-6 text-primary" />
+          <div className="flex justify-center mb-4">
+            <DriveasyLogo size="md" />
           </div>
-          <CardTitle className="text-2xl">Admin Login</CardTitle>
+          <CardTitle className="text-2xl">Admin Portal</CardTitle>
           <CardDescription>Sign in to access the admin dashboard</CardDescription>
         </CardHeader>
         <CardContent>
@@ -73,7 +74,7 @@ export default function AdminLoginPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@drivecoach.com"
+                placeholder="admin@driveasy.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required

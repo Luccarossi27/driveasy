@@ -10,9 +10,9 @@ const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "DriveCoach - Smart Instructor Dashboard",
+  title: "Driveasy - Autonomous Driving Management",
   description:
-    "AI-powered dashboard for driving instructors to manage students, track progress, and grow their business.",
+    "Driveasy: Smart platform for driving instructors to manage students, track progress, and grow their business. Student portal for lesson booking and progress tracking.",
   generator: "v0.app",
   icons: {
     icon: [

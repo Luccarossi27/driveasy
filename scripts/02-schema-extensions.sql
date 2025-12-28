@@ -25,8 +25,7 @@ CREATE TABLE IF NOT EXISTS student_invitations (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   expires_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP + INTERVAL '30 days',
   accepted_at TIMESTAMP,
-  FOREIGN KEY (instructor_id) REFERENCES instructors(id) ON DELETE CASCADE,
-  INDEX idx_email_status (student_email, status)
+  FOREIGN KEY (instructor_id) REFERENCES instructors(id) ON DELETE CASCADE
 );
 
 -- Instructor Codes Table (for unique instructor identification)

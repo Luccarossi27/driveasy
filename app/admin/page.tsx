@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Users, FileCheck, Clock, CheckCircle, LogOut } from "lucide-react"
 import Link from "next/link"
+import { DriveasyLogo } from "@/components/driveasy-logo"
 
 async function verifyAdmin(sessionToken: string) {
   const sql = neon(process.env.DATABASE_URL!)
@@ -69,9 +70,12 @@ export default async function AdminDashboard() {
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-            <p className="text-muted-foreground">Welcome, {admin.email}</p>
+          <div className="flex items-center gap-4">
+            <DriveasyLogo size="sm" />
+            <div>
+              <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+              <p className="text-muted-foreground">Welcome, {admin.email}</p>
+            </div>
           </div>
           <form action="/api/auth/logout" method="POST">
             <Button variant="outline" type="submit">

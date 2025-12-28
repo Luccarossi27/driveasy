@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Shield, Loader2, CheckCircle } from "lucide-react"
+import { Loader2, CheckCircle } from "lucide-react"
+import { DriveasyLogo } from "@/components/driveasy-logo"
 
 export default function AdminSetupPage() {
   const router = useRouter()
@@ -81,8 +82,8 @@ export default function AdminSetupPage() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
-            <Shield className="h-6 w-6 text-primary" />
+          <div className="flex justify-center mb-4">
+            <DriveasyLogo size="md" />
           </div>
           <CardTitle className="text-2xl">Admin Setup</CardTitle>
           <CardDescription>Create your admin account to manage the platform</CardDescription>

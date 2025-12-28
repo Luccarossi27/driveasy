@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
-import { students, instructorStats } from "@/lib/data"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -24,49 +23,22 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-// Mock payment history
-const paymentHistory = [
-  {
-    id: "p1",
-    studentId: "1",
-    studentName: "Emma Thompson",
-    amount: 68,
-    date: "2024-12-20",
-    status: "completed",
-    type: "lesson",
-    description: "2-hour lesson",
-  },
-  {
-    id: "p2",
-    studentId: "3",
-    studentName: "Sophie Chen",
-    amount: 170,
-    date: "2024-12-18",
-    status: "completed",
-    type: "package",
-    description: "5-lesson package",
-  },
-  {
-    id: "p3",
-    studentId: "2",
-    studentName: "James Wilson",
-    amount: 68,
-    date: "2024-12-15",
-    status: "completed",
-    type: "lesson",
-    description: "2-hour lesson",
-  },
-  {
-    id: "p4",
-    studentId: "4",
-    studentName: "Oliver Brown",
-    amount: 34,
-    date: "2024-12-12",
-    status: "pending",
-    type: "lesson",
-    description: "1-hour lesson",
-  },
-]
+interface StripeTransaction {
+  id: string
+  student_name: string
+  student_email: string
+  amount_cents: number
+  status: string
+  package_id: string | null
+  created_at: string
+}
+
+interface Student {
+  id: string
+  name: string
+  email: string
+  balance: number
+}
 
 // Pricing packages
 const initialPackages = [
@@ -89,6 +61,55 @@ export function PaymentsContent() {
   const [showAddPackage, setShowAddPackage] = useState(false)
   const [newPackage, setNewPackage] = useState({ name: "", hours: 1, price: 0 })
 
+  const [students, setStudents] = useState<Student[]>([])
+  const [transactions, setTransactions] = useState<StripeTransaction[]>([])
+  const [stats, setStats] = useState({
+    monthlyRevenue: 0,
+    totalReceived: 0,
+    totalOutstanding: 0,
+    packagesSold: 0,
+  })
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    async function fetchPaymentData() {
+      try {
+        // Fetch students
+        const studentsRes = await fetch("/api/instructor/students")
+        if (studentsRes.ok) {
+          const studentsData = await studentsRes.json()
+          setStudents(studentsData.students || [])
+        }
+
+        // Fetch Stripe transactions
+        const transactionsRes = await fetch("/api/payment/history")
+        if (transactionsRes.ok) {
+          const transactionsData = await transactionsRes.json()
+          setTransactions(transactionsData.transactions || [])
+
+          // Calculate stats from real transactions
+          const succeeded =
+            transactionsData.transactions?.filter((t: StripeTransaction) => t.status === "succeeded") || []
+          const totalReceived = succeeded.reduce((acc: number, t: StripeTransaction) => acc + t.amount_cents, 0) / 100
+          const packagesSold = succeeded.filter((t: StripeTransaction) => t.package_id).length
+
+          setStats({
+            monthlyRevenue: totalReceived,
+            totalReceived,
+            totalOutstanding: 0, // Will calculate from student balances
+            packagesSold,
+          })
+        }
+      } catch (error) {
+        console.error("Error fetching payment data:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchPaymentData()
+  }, [])
+
   useEffect(() => {
     if (studentIdParam) {
       setSelectedStudent(studentIdParam)
@@ -96,7 +117,7 @@ export function PaymentsContent() {
   }, [studentIdParam])
 
   const studentsWithBalance = students.filter((s) => s.balance > 0)
-  const totalOutstanding = students.reduce((acc, s) => acc + s.balance, 0)
+  const totalOutstanding = students.reduce((acc, s) => acc + (s.balance || 0), 0)
   const selectedStudentData = students.find((s) => s.id === selectedStudent)
 
   const handleSendRequest = async () => {
@@ -114,7 +135,7 @@ export function PaymentsContent() {
 
   const handleAddPackage = () => {
     if (newPackage.name && newPackage.price > 0) {
-      setCustomPackages([...customPackages, { id: `pkg-${Date.now()}`, ...newPackage }])
+      setCustomPackages([...customPackages, { id: `pkg-${Date.now()}`, ...newPackage, savings: 0 }])
       setNewPackage({ name: "", hours: 1, price: 0 })
       setShowAddPackage(false)
     }
@@ -124,45 +145,55 @@ export function PaymentsContent() {
     setCustomPackages(customPackages.filter((pkg) => pkg.id !== id))
   }
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground">Payments & Billing</h1>
-        <p className="text-muted-foreground">Manage lesson payments and track outstanding balances</p>
+        <p className="text-muted-foreground">Manage lesson payments and track Stripe earnings</p>
       </div>
 
-      {/* Stats Row */}
+      {/* Stats Row - Now shows real Stripe data */}
       <div className="grid gap-4 sm:grid-cols-4">
         <div className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
             <PoundSterling className="h-5 w-5 text-primary" />
             <TrendingUp className="h-4 w-4 text-success" />
           </div>
-          <p className="text-2xl font-bold text-foreground mt-2">£{instructorStats.monthlyRevenue}</p>
+          <p className="text-2xl font-bold text-foreground mt-2">£{stats.monthlyRevenue.toFixed(2)}</p>
           <p className="text-sm text-muted-foreground">This month</p>
         </div>
         <div className="rounded-xl border border-border bg-card p-5">
           <PoundSterling className="h-5 w-5 text-success" />
-          <p className="text-2xl font-bold text-foreground mt-2">
-            £{instructorStats.monthlyRevenue - totalOutstanding}
-          </p>
-          <p className="text-sm text-muted-foreground">Received</p>
+          <p className="text-2xl font-bold text-foreground mt-2">£{stats.totalReceived.toFixed(2)}</p>
+          <p className="text-sm text-muted-foreground">Received via Stripe</p>
         </div>
         <div className="rounded-xl border border-warning/30 bg-warning/5 p-5">
           <AlertCircle className="h-5 w-5 text-warning" />
-          <p className="text-2xl font-bold text-warning mt-2">£{totalOutstanding}</p>
+          <p className="text-2xl font-bold text-warning mt-2">£{totalOutstanding.toFixed(2)}</p>
           <p className="text-sm text-muted-foreground">Outstanding</p>
         </div>
         <div className="rounded-xl border border-border bg-card p-5">
           <Package className="h-5 w-5 text-chart-2" />
-          <p className="text-2xl font-bold text-foreground mt-2">8</p>
+          <p className="text-2xl font-bold text-foreground mt-2">{stats.packagesSold}</p>
           <p className="text-sm text-muted-foreground">Packages sold</p>
         </div>
       </div>
 
-      <Tabs defaultValue="request" className="space-y-6">
+      <Tabs defaultValue="history" className="space-y-6">
         <TabsList className="bg-secondary">
+          <TabsTrigger value="history" className="data-[state=active]:bg-card">
+            <Receipt className="mr-2 h-4 w-4" />
+            Stripe Payments
+          </TabsTrigger>
           <TabsTrigger value="request" className="data-[state=active]:bg-card">
             <Send className="mr-2 h-4 w-4" />
             Request Payment
@@ -171,15 +202,68 @@ export function PaymentsContent() {
             <AlertCircle className="mr-2 h-4 w-4" />
             Outstanding
           </TabsTrigger>
-          <TabsTrigger value="history" className="data-[state=active]:bg-card">
-            <Receipt className="mr-2 h-4 w-4" />
-            History
-          </TabsTrigger>
           <TabsTrigger value="pricing" className="data-[state=active]:bg-card">
             <CreditCard className="mr-2 h-4 w-4" />
             Pricing
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="history" className="space-y-4">
+          <div className="rounded-xl border border-border bg-card">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <h3 className="font-semibold text-foreground">Stripe Transactions</h3>
+              <Button variant="outline" size="sm" className="bg-transparent">
+                <Download className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+            </div>
+            {transactions.length > 0 ? (
+              <div className="divide-y divide-border">
+                {transactions.map((payment) => (
+                  <div key={payment.id} className="flex items-center gap-4 px-5 py-4">
+                    <div
+                      className={cn(
+                        "flex h-10 w-10 items-center justify-center rounded-full",
+                        payment.status === "succeeded"
+                          ? "bg-success/10"
+                          : payment.status === "pending"
+                            ? "bg-warning/10"
+                            : "bg-destructive/10",
+                      )}
+                    >
+                      {payment.status === "succeeded" ? (
+                        <CheckCircle2 className="h-5 w-5 text-success" />
+                      ) : payment.status === "pending" ? (
+                        <Clock className="h-5 w-5 text-warning" />
+                      ) : (
+                        <AlertCircle className="h-5 w-5 text-destructive" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-foreground">{payment.student_name || "Student"}</p>
+                      <p className="text-sm text-muted-foreground">{payment.package_id || "Lesson payment"}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-foreground">£{(payment.amount_cents / 100).toFixed(2)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(payment.created_at).toLocaleDateString("en-GB", {
+                          day: "numeric",
+                          month: "short",
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Receipt className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="font-semibold text-foreground">No transactions yet</h3>
+                <p className="text-sm text-muted-foreground mt-1">Stripe payments from students will appear here</p>
+              </div>
+            )}
+          </div>
+        </TabsContent>
 
         <TabsContent value="request" className="space-y-6">
           <div className="grid gap-6 lg:grid-cols-2">
@@ -291,7 +375,7 @@ export function PaymentsContent() {
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    Student will receive a secure payment link via email
+                    Student will receive a secure Stripe payment link via email
                   </div>
                 </div>
               ) : (
@@ -342,49 +426,6 @@ export function PaymentsContent() {
               <p className="text-sm text-muted-foreground">No outstanding payments from any students</p>
             </div>
           )}
-        </TabsContent>
-
-        <TabsContent value="history" className="space-y-4">
-          <div className="rounded-xl border border-border bg-card">
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
-              <h3 className="font-semibold text-foreground">Recent Transactions</h3>
-              <Button variant="outline" size="sm" className="bg-transparent">
-                <Download className="mr-2 h-4 w-4" />
-                Export
-              </Button>
-            </div>
-            <div className="divide-y divide-border">
-              {paymentHistory.map((payment) => (
-                <div key={payment.id} className="flex items-center gap-4 px-5 py-4">
-                  <div
-                    className={cn(
-                      "flex h-10 w-10 items-center justify-center rounded-full",
-                      payment.status === "completed" ? "bg-success/10" : "bg-warning/10",
-                    )}
-                  >
-                    {payment.status === "completed" ? (
-                      <CheckCircle2 className="h-5 w-5 text-success" />
-                    ) : (
-                      <Clock className="h-5 w-5 text-warning" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-foreground">{payment.studentName}</p>
-                    <p className="text-sm text-muted-foreground">{payment.description}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-foreground">£{payment.amount}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(payment.date).toLocaleDateString("en-GB", {
-                        day: "numeric",
-                        month: "short",
-                      })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </TabsContent>
 
         <TabsContent value="pricing" className="space-y-4">

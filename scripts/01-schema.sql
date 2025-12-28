@@ -1,7 +1,9 @@
 -- Complete database schema for driving instructor SaaS
 
+-- Added IF NOT EXISTS to all CREATE statements so migrations can be re-run safely
+
 -- Instructors table
-CREATE TABLE instructors (
+CREATE TABLE IF NOT EXISTS instructors (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL,
@@ -18,9 +20,10 @@ CREATE TABLE instructors (
 );
 
 -- Students table
-CREATE TABLE students (
+CREATE TABLE IF NOT EXISTS students (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  instructor_id UUID NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
+  -- Made instructor_id nullable so students can register without an instructor
+  instructor_id UUID REFERENCES instructors(id) ON DELETE CASCADE,
   first_name TEXT NOT NULL,
   last_name TEXT NOT NULL,
   email TEXT,
@@ -36,7 +39,7 @@ CREATE TABLE students (
 );
 
 -- Lessons table
-CREATE TABLE lessons (
+CREATE TABLE IF NOT EXISTS lessons (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   instructor_id UUID NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
   student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -54,7 +57,7 @@ CREATE TABLE lessons (
 );
 
 -- ADAS Training table
-CREATE TABLE adas_training (
+CREATE TABLE IF NOT EXISTS adas_training (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
   feature_name TEXT NOT NULL, -- adaptive cruise control, lane assist, emergency braking, etc.
@@ -66,7 +69,7 @@ CREATE TABLE adas_training (
 );
 
 -- Payments table
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   instructor_id UUID NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
   student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -79,7 +82,7 @@ CREATE TABLE payments (
 );
 
 -- Reviews table
-CREATE TABLE reviews (
+CREATE TABLE IF NOT EXISTS reviews (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   instructor_id UUID NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
   student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -90,7 +93,7 @@ CREATE TABLE reviews (
 );
 
 -- Referrals table
-CREATE TABLE referrals (
+CREATE TABLE IF NOT EXISTS referrals (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   instructor_id UUID NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
   referrer_student_id UUID REFERENCES students(id) ON DELETE SET NULL,
@@ -101,11 +104,11 @@ CREATE TABLE referrals (
 );
 
 -- Create indexes for better query performance
-CREATE INDEX idx_students_instructor_id ON students(instructor_id);
-CREATE INDEX idx_lessons_instructor_id ON lessons(instructor_id);
-CREATE INDEX idx_lessons_student_id ON lessons(student_id);
-CREATE INDEX idx_adas_training_student_id ON adas_training(student_id);
-CREATE INDEX idx_payments_instructor_id ON payments(instructor_id);
-CREATE INDEX idx_payments_student_id ON payments(student_id);
-CREATE INDEX idx_reviews_instructor_id ON reviews(instructor_id);
-CREATE INDEX idx_referrals_instructor_id ON referrals(instructor_id);
+CREATE INDEX IF NOT EXISTS idx_students_instructor_id ON students(instructor_id);
+CREATE INDEX IF NOT EXISTS idx_lessons_instructor_id ON lessons(instructor_id);
+CREATE INDEX IF NOT EXISTS idx_lessons_student_id ON lessons(student_id);
+CREATE INDEX IF NOT EXISTS idx_adas_training_student_id ON adas_training(student_id);
+CREATE INDEX IF NOT EXISTS idx_payments_instructor_id ON payments(instructor_id);
+CREATE INDEX IF NOT EXISTS idx_payments_student_id ON payments(student_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_instructor_id ON reviews(instructor_id);
+CREATE INDEX IF NOT EXISTS idx_referrals_instructor_id ON referrals(instructor_id);

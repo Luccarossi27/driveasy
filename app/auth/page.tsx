@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { DriveasyLogo } from "@/components/driveasy-logo"
 
 export default function AuthPage() {
   const router = useRouter()
@@ -13,9 +14,10 @@ export default function AuthPage() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-4xl">
-        {/* Header */}
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-foreground mb-2">DriveCoach</h1>
+          <div className="flex justify-center mb-4">
+            <DriveasyLogo size="lg" />
+          </div>
           <p className="text-lg text-muted-foreground">Smart Platform for Driving Instructors & Students</p>
         </div>
 
