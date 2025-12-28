@@ -50,7 +50,7 @@ async function getInstructorDetails(id: string) {
 export default async function InstructorVerificationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const cookieStore = await cookies()
-  const sessionToken = cookieStore.get("session")?.value
+  const sessionToken = cookieStore.get("drivecoach_session")?.value
 
   if (!sessionToken) {
     redirect("/admin/login")
