@@ -52,7 +52,7 @@ async function getAdminStats() {
 
 export default async function AdminDashboard() {
   const cookieStore = await cookies()
-  const sessionToken = cookieStore.get("session")?.value
+  const sessionToken = cookieStore.get("drivecoach_session")?.value
 
   if (!sessionToken) {
     redirect("/admin/login")

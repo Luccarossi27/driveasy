@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless"
 import { verifyPassword, generateSessionToken } from "@/lib/auth-utils"
-import { setSessionCookie } from "@/lib/session"
+import { cookies } from "next/headers"
 
 export async function POST(request: Request) {
   try {
@@ -12,7 +12,6 @@ export async function POST(request: Request) {
 
     const sql = neon(process.env.DATABASE_URL!)
 
-    // Only allow admin users to login through this endpoint
     const users = await sql`SELECT id, password_hash, role FROM users WHERE email = ${email} AND role = 'admin'`
 
     if (users.length === 0) {
@@ -30,9 +29,17 @@ export async function POST(request: Request) {
 
     await sql`INSERT INTO sessions (user_id, token, expires_at) VALUES (${user.id}, ${token}, ${expiresAt})`
 
-    await setSessionCookie(token, expiresAt)
+    const cookieStore = await cookies()
+    cookieStore.set("drivecoach_session", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      expires: expiresAt,
+      path: "/",
+    })
 
-    return Response.json({ success: true, role: "admin" }, { status: 200 })
+    const response = Response.json({ success: true, role: "admin" }, { status: 200 })
+    return response
   } catch (error) {
     console.error("[v0] Admin login error:", error)
     return Response.json({ error: "Login failed" }, { status: 500 })
