@@ -14,13 +14,16 @@ export function generateSessionToken(): string {
 }
 
 export function generateInstructorCode(firstName: string, lastName: string): string {
-  const randomNum = Math.floor(Math.random() * 100)
-  return `${firstName.toUpperCase()}-${lastName.toUpperCase()}-${randomNum}`
+  const firstInitial = firstName.charAt(0).toUpperCase()
+  const lastInitial = lastName.charAt(0).toUpperCase()
+  // Use 6-digit random number for much better uniqueness (0-999999)
+  const randomNum = Math.floor(Math.random() * 1000000)
+  return `${firstInitial}${lastInitial}-${String(randomNum).padStart(6, "0")}`
 }
 
 export async function verifySession(sessionToken: string) {
   const result = await sql`
-    SELECT s.*, u.role, u.email 
+    SELECT s.*, u.role, u.email, u.id as userId
     FROM sessions s
     JOIN users u ON s.user_id = u.id
     WHERE s.token = ${sessionToken} AND s.expires_at > NOW()
