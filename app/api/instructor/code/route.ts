@@ -10,19 +10,18 @@ export async function GET(request: NextRequest) {
     const cookieStore = await cookies()
     const sessionToken = cookieStore.get("drivecoach_session")?.value
 
-    console.log("[v0] Instructor code route: session token exists:", !!sessionToken)
+    console.log("[v0] Instructor code route: checking session")
 
     if (!sessionToken) {
       console.log("[v0] No session token found")
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized - no session" }, { status: 401 })
     }
 
     const session = await verifySession(sessionToken)
-    console.log("[v0] Verified session:", session)
 
     if (!session) {
-      console.log("[v0] Session verification returned null")
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      console.log("[v0] Session verification failed")
+      return NextResponse.json({ error: "Unauthorized - invalid session" }, { status: 401 })
     }
 
     if (session.role !== "instructor") {
@@ -31,45 +30,46 @@ export async function GET(request: NextRequest) {
     }
 
     console.log("[v0] Fetching instructor for user:", session.userId)
-    const result = await sql`
+
+    const instructorResult = await sql`
       SELECT i.id, i.instructor_code, u.name
       FROM instructors i
       JOIN users u ON i.user_id = u.id
       WHERE i.user_id = ${session.userId}
     `
 
-    console.log("[v0] Instructor query result:", result)
+    console.log("[v0] Instructor query result count:", instructorResult.length)
 
-    if (result.length === 0) {
-      console.log("[v0] No instructor found for user:", session.userId)
+    if (instructorResult.length === 0) {
+      console.log("[v0] No instructor record found for user:", session.userId)
       return NextResponse.json({ error: "Instructor not found" }, { status: 404 })
     }
 
-    const instructor = result[0]
+    const instructor = instructorResult[0]
 
     // If code already exists, return it
     if (instructor.instructor_code) {
-      console.log("[v0] Returning existing instructor code:", instructor.instructor_code)
+      console.log("[v0] Returning existing code:", instructor.instructor_code)
       return NextResponse.json({ code: instructor.instructor_code })
     }
 
     // Generate new code if doesn't exist
-    const nameParts = instructor.name.trim().split(/\s+/)
+    const nameParts = (instructor.name || "INSTRUCTOR").trim().split(/\s+/)
     const firstName = nameParts[0] || "INSTRUCTOR"
     const lastName = nameParts[1] || ""
 
     let newCode = generateInstructorCode(firstName, lastName)
-
     let isUnique = false
     let attempts = 0
+
     while (!isUnique && attempts < 10) {
-      const existing = await sql`
-        SELECT instructor_code FROM instructors WHERE instructor_code = ${newCode}
+      const existingResult = await sql`
+        SELECT id FROM instructors WHERE instructor_code = ${newCode}
       `
-      if (existing.length === 0) {
+      if (existingResult.length === 0) {
         isUnique = true
       } else {
-        console.log("[v0] Code collision detected, regenerating:", newCode)
+        console.log("[v0] Code exists, regenerating")
         newCode = generateInstructorCode(firstName, lastName)
         attempts++
       }
@@ -85,10 +85,13 @@ export async function GET(request: NextRequest) {
       UPDATE instructors SET instructor_code = ${newCode} WHERE id = ${instructor.id}
     `
 
-    console.log("[v0] Generated new instructor code:", newCode)
+    console.log("[v0] Generated and saved code:", newCode)
     return NextResponse.json({ code: newCode })
   } catch (error) {
-    console.error("[v0] Fetch instructor code error:", error)
-    return NextResponse.json({ error: "Failed to fetch instructor code", details: String(error) }, { status: 500 })
+    console.error("[v0] Instructor code error:", error)
+    return NextResponse.json(
+      { error: "Failed to fetch instructor code", details: error instanceof Error ? error.message : String(error) },
+      { status: 500 },
+    )
   }
 }

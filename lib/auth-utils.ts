@@ -22,22 +22,26 @@ export function generateInstructorCode(firstName: string, lastName: string): str
 }
 
 export async function verifySession(sessionToken: string) {
-  const result = await sql`
-    SELECT s.*, u.role, u.email, u.id as userId
-    FROM sessions s
-    JOIN users u ON s.user_id = u.id
-    WHERE s.token = ${sessionToken} AND s.expires_at > NOW()
-  `
+  try {
+    const result = await sql`
+      SELECT s.id, s.user_id, u.role, u.email
+      FROM sessions s
+      JOIN users u ON s.user_id = u.id
+      WHERE s.token = ${sessionToken} AND s.expires_at > NOW()
+    `
 
-  if (result.length === 0) {
-    console.log("[v0] Session verification failed: session not found or expired")
+    if (result.length === 0) {
+      console.log("[v0] Session verification failed: session not found or expired")
+      return null
+    }
+
+    return {
+      userId: result[0].user_id,
+      role: result[0].role,
+      email: result[0].email,
+    }
+  } catch (error) {
+    console.error("[v0] Session verification error:", error)
     return null
-  }
-
-  console.log("[v0] Session verified for user:", result[0].userId, "role:", result[0].role)
-  return {
-    userId: result[0].userId,
-    role: result[0].role,
-    email: result[0].email,
   }
 }
