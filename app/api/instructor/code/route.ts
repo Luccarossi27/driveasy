@@ -10,16 +10,27 @@ export async function GET(request: NextRequest) {
     const cookieStore = await cookies()
     const sessionToken = cookieStore.get("drivecoach_session")?.value
 
+    console.log("[v0] Instructor code route: session token exists:", !!sessionToken)
+
     if (!sessionToken) {
+      console.log("[v0] No session token found")
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const session = await verifySession(sessionToken)
-    if (!session || session.role !== "instructor") {
+    console.log("[v0] Verified session:", session)
+
+    if (!session) {
+      console.log("[v0] Session verification returned null")
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Get instructor info
+    if (session.role !== "instructor") {
+      console.log("[v0] User role is not instructor:", session.role)
+      return NextResponse.json({ error: "Unauthorized - not an instructor" }, { status: 403 })
+    }
+
+    console.log("[v0] Fetching instructor for user:", session.userId)
     const result = await sql`
       SELECT i.id, i.instructor_code, u.name
       FROM instructors i
@@ -27,7 +38,10 @@ export async function GET(request: NextRequest) {
       WHERE i.user_id = ${session.userId}
     `
 
+    console.log("[v0] Instructor query result:", result)
+
     if (result.length === 0) {
+      console.log("[v0] No instructor found for user:", session.userId)
       return NextResponse.json({ error: "Instructor not found" }, { status: 404 })
     }
 
@@ -62,6 +76,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (!isUnique) {
+      console.log("[v0] Failed to generate unique code after 10 attempts")
       return NextResponse.json({ error: "Failed to generate unique code" }, { status: 500 })
     }
 
@@ -74,6 +89,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ code: newCode })
   } catch (error) {
     console.error("[v0] Fetch instructor code error:", error)
-    return NextResponse.json({ error: "Failed to fetch instructor code" }, { status: 500 })
+    return NextResponse.json({ error: "Failed to fetch instructor code", details: String(error) }, { status: 500 })
   }
 }

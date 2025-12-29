@@ -30,8 +30,14 @@ export async function verifySession(sessionToken: string) {
   `
 
   if (result.length === 0) {
+    console.log("[v0] Session verification failed: session not found or expired")
     return null
   }
 
-  return result[0]
+  console.log("[v0] Session verified for user:", result[0].userId, "role:", result[0].role)
+  return {
+    userId: result[0].userId,
+    role: result[0].role,
+    email: result[0].email,
+  }
 }
