@@ -1,30 +1,88 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Mail, Share2, Copy, CheckCircle2, Users, Loader2 } from "lucide-react"
+
+interface Invitation {
+  id: string
+  student_email: string
+  status: string
+  created_at: string
+  accepted_at: string | null
+}
 
 export default function InvitePage() {
   const [studentEmail, setStudentEmail] = useState("")
   const [isSending, setSending] = useState(false)
   const [sentSuccess, setSentSuccess] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [instructorCode, setInstructorCode] = useState("")
+  const [invitations, setInvitations] = useState<Invitation[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const instructorCode = "MIKE-HARRISON-42"
-  const inviteLink = `https://drivecoach.app/join?instructor=${instructorCode}`
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch instructor code
+        const codeRes = await fetch("/api/instructor/code")
+        if (codeRes.ok) {
+          const codeData = await codeRes.json()
+          setInstructorCode(codeData.code || "")
+        }
+
+        // Fetch invitations
+        const invRes = await fetch("/api/instructor/invitations")
+        if (invRes.ok) {
+          const invData = await invRes.json()
+          setInvitations(invData.invitations || [])
+        }
+      } catch (error) {
+        console.error("Failed to fetch data:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [])
+
+  const inviteLink =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/join?code=${instructorCode}`
+      : `/join?code=${instructorCode}`
 
   const handleSendInvite = async () => {
     if (!studentEmail) return
     setSending(true)
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    setSending(false)
-    setSentSuccess(true)
-    setTimeout(() => {
-      setSentSuccess(false)
-      setStudentEmail("")
-    }, 2000)
+
+    try {
+      const res = await fetch("/api/instructor/invitations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentEmail }),
+      })
+
+      if (res.ok) {
+        setSentSuccess(true)
+        // Refresh invitations list
+        const invRes = await fetch("/api/instructor/invitations")
+        if (invRes.ok) {
+          const invData = await invRes.json()
+          setInvitations(invData.invitations || [])
+        }
+        setTimeout(() => {
+          setSentSuccess(false)
+          setStudentEmail("")
+        }, 2000)
+      }
+    } catch (error) {
+      console.error("Failed to send invite:", error)
+    } finally {
+      setSending(false)
+    }
   }
 
   const handleCopyCode = () => {
@@ -37,6 +95,25 @@ export default function InvitePage() {
     navigator.clipboard.writeText(inviteLink)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
+
+    if (diffDays === 0) return "Today"
+    if (diffDays === 1) return "Yesterday"
+    if (diffDays < 7) return `${diffDays} days ago`
+    return date.toLocaleDateString()
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
   }
 
   return (
@@ -116,31 +193,29 @@ export default function InvitePage() {
               </div>
             </div>
 
-            {/* Recent Invites */}
+            {/* Recent Invites - Now from database */}
             <div className="rounded-xl border border-border bg-card p-6">
               <h3 className="font-semibold text-foreground mb-4">Recent Invitations</h3>
               <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
-                  <div>
-                    <p className="font-medium text-foreground">sophie.chen@email.com</p>
-                    <p className="text-xs text-muted-foreground">Sent yesterday</p>
-                  </div>
-                  <span className="px-2 py-1 bg-success/10 text-success text-xs font-medium rounded">Accepted</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
-                  <div>
-                    <p className="font-medium text-foreground">james.wilson@email.com</p>
-                    <p className="text-xs text-muted-foreground">Sent 3 days ago</p>
-                  </div>
-                  <span className="px-2 py-1 bg-warning/10 text-warning text-xs font-medium rounded">Pending</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
-                  <div>
-                    <p className="font-medium text-foreground">olivia.brown@email.com</p>
-                    <p className="text-xs text-muted-foreground">Sent 1 week ago</p>
-                  </div>
-                  <span className="px-2 py-1 bg-success/10 text-success text-xs font-medium rounded">Accepted</span>
-                </div>
+                {invitations.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">No invitations sent yet</p>
+                ) : (
+                  invitations.slice(0, 5).map((inv) => (
+                    <div key={inv.id} className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                      <div>
+                        <p className="font-medium text-foreground">{inv.student_email}</p>
+                        <p className="text-xs text-muted-foreground">Sent {formatDate(inv.created_at)}</p>
+                      </div>
+                      <span
+                        className={`px-2 py-1 text-xs font-medium rounded ${
+                          inv.status === "accepted" ? "bg-success/10 text-success" : "bg-warning/10 text-warning"
+                        }`}
+                      >
+                        {inv.status === "accepted" ? "Accepted" : "Pending"}
+                      </span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -163,23 +238,16 @@ export default function InvitePage() {
                 <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Your Code</p>
                 <div className="relative">
                   <div className="bg-card border border-border rounded-lg p-4 font-mono text-2xl font-bold text-primary text-center tracking-wider">
-                    {instructorCode}
+                    {instructorCode || "Loading..."}
                   </div>
                   <Button
                     onClick={handleCopyCode}
                     size="sm"
                     variant="outline"
                     className="absolute top-2 right-2 bg-transparent"
+                    disabled={!instructorCode}
                   >
-                    {copied ? (
-                      <>
-                        <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-3.5 w-3.5" />
-                      </>
-                    )}
+                    {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
                   </Button>
                 </div>
               </div>
@@ -187,10 +255,10 @@ export default function InvitePage() {
               <div className="p-4 bg-warning/5 border border-warning/30 rounded-lg">
                 <p className="text-sm text-warning font-medium">How to share:</p>
                 <ul className="text-xs text-muted-foreground mt-2 space-y-1">
-                  <li>• Students enter code on the "Find Instructor" page</li>
+                  <li>• Students go to the "Join" page on Driveasy</li>
+                  <li>• They enter your unique code</li>
                   <li>• They see your profile and pass rate</li>
-                  <li>• They send you a join request</li>
-                  <li>• You accept and they're added to your students</li>
+                  <li>• They click join and connect to you</li>
                 </ul>
               </div>
             </div>
@@ -204,8 +272,8 @@ export default function InvitePage() {
                     1
                   </div>
                   <div>
-                    <p className="font-medium text-foreground">Student visits "Find Instructor"</p>
-                    <p className="text-sm text-muted-foreground">On the join page</p>
+                    <p className="font-medium text-foreground">Student visits /join page</p>
+                    <p className="text-sm text-muted-foreground">On the Driveasy website</p>
                   </div>
                 </div>
                 <div className="flex gap-4">
@@ -223,7 +291,7 @@ export default function InvitePage() {
                   </div>
                   <div>
                     <p className="font-medium text-foreground">Sees your credentials</p>
-                    <p className="text-sm text-muted-foreground">Pass rate, reviews, experience</p>
+                    <p className="text-sm text-muted-foreground">Pass rate, car type, experience</p>
                   </div>
                 </div>
                 <div className="flex gap-4">
@@ -231,8 +299,8 @@ export default function InvitePage() {
                     4
                   </div>
                   <div>
-                    <p className="font-medium text-foreground">Sends join request</p>
-                    <p className="text-sm text-muted-foreground">You approve and they're connected</p>
+                    <p className="font-medium text-foreground">Clicks join</p>
+                    <p className="text-sm text-muted-foreground">They're automatically connected to you</p>
                   </div>
                 </div>
               </div>
@@ -271,36 +339,67 @@ export default function InvitePage() {
               <div className="space-y-2">
                 <p className="text-sm font-medium text-foreground">Share on:</p>
                 <div className="grid grid-cols-3 gap-2">
-                  <Button variant="outline" className="bg-transparent" size="sm">
+                  <Button
+                    variant="outline"
+                    className="bg-transparent"
+                    size="sm"
+                    onClick={() =>
+                      window.open(`https://wa.me/?text=${encodeURIComponent(`Join me on Driveasy: ${inviteLink}`)}`)
+                    }
+                  >
                     WhatsApp
                   </Button>
-                  <Button variant="outline" className="bg-transparent" size="sm">
+                  <Button
+                    variant="outline"
+                    className="bg-transparent"
+                    size="sm"
+                    onClick={() =>
+                      window.open(
+                        `mailto:?subject=Join my driving lessons&body=${encodeURIComponent(`Join me on Driveasy: ${inviteLink}`)}`,
+                      )
+                    }
+                  >
                     Email
                   </Button>
-                  <Button variant="outline" className="bg-transparent" size="sm">
+                  <Button
+                    variant="outline"
+                    className="bg-transparent"
+                    size="sm"
+                    onClick={() =>
+                      window.open(
+                        `https://twitter.com/intent/tweet?text=${encodeURIComponent(`Join me on Driveasy: ${inviteLink}`)}`,
+                      )
+                    }
+                  >
                     Twitter
                   </Button>
                 </div>
               </div>
             </div>
 
-            {/* Link Preview */}
+            {/* Link Info */}
             <div className="rounded-xl border border-border bg-card p-6">
-              <h3 className="font-semibold text-foreground mb-4">Preview</h3>
-              <div className="rounded-lg border border-border p-4 space-y-3">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-2xl font-bold text-primary">
-                  MH
-                </div>
-                <div>
-                  <p className="font-semibold text-foreground">Mike Harrison</p>
-                  <p className="text-sm text-muted-foreground">Verified Driving Instructor</p>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-warning">★</span>
-                  <span className="font-medium text-foreground">4.9</span>
-                  <span className="text-muted-foreground">(24 reviews)</span>
-                </div>
-                <Button className="w-full mt-2">Join Now</Button>
+              <h3 className="font-semibold text-foreground mb-4">How It Works</h3>
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">When someone opens your link, they'll:</p>
+                <ul className="text-sm text-muted-foreground space-y-2">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-success mt-0.5" />
+                    See your instructor profile
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-success mt-0.5" />
+                    View your credentials and pass rate
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-success mt-0.5" />
+                    Create an account if needed
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-success mt-0.5" />
+                    Automatically connect to you
+                  </li>
+                </ul>
               </div>
             </div>
           </div>
