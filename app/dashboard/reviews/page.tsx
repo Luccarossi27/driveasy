@@ -1,19 +1,89 @@
 "use client"
 
-import { useState } from "react"
-import { students, reviews } from "@/lib/data"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Star, Send, LinkIcon, Copy, BadgeCheck, Clock, Gift, Users, Share2, MessageSquare } from "lucide-react"
+import {
+  Star,
+  Send,
+  LinkIcon,
+  Copy,
+  BadgeCheck,
+  Clock,
+  Gift,
+  Users,
+  Share2,
+  MessageSquare,
+  Loader2,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
+
+interface Review {
+  id: string
+  studentId: string
+  studentName: string
+  rating: number
+  comment: string
+  date: string
+  isPublic: boolean
+}
+
+interface Student {
+  id: string
+  name: string
+  status: string
+  practicalTestDate?: string
+}
+
+interface Referral {
+  id: string
+  referrer: string
+  referee: string
+  status: string
+  reward: string
+}
 
 export default function ReviewsPage() {
   const [copied, setCopied] = useState(false)
-  const reviewLink = "https://drivecoach.app/review/mike-harrison"
+  const [loading, setLoading] = useState(true)
+  const [reviews, setReviews] = useState<Review[]>([])
+  const [recentlyPassed, setRecentlyPassed] = useState<Student[]>([])
+  const [referrals, setReferrals] = useState<Referral[]>([])
+  const [reviewLink, setReviewLink] = useState("")
 
-  // Find students who recently passed and haven't left a review
-  const recentlyPassed = students.filter((s) => s.status === "passed")
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [reviewsRes, studentsRes, referralsRes] = await Promise.all([
+          fetch("/api/instructor/reviews"),
+          fetch("/api/instructor/students?status=passed"),
+          fetch("/api/instructor/referrals"),
+        ])
+
+        if (reviewsRes.ok) {
+          const data = await reviewsRes.json()
+          setReviews(data.reviews || [])
+          setReviewLink(data.reviewLink || `${window.location.origin}/review`)
+        }
+
+        if (studentsRes.ok) {
+          const data = await studentsRes.json()
+          setRecentlyPassed(data.students || [])
+        }
+
+        if (referralsRes.ok) {
+          const data = await referralsRes.json()
+          setReferrals(data.referrals || [])
+        }
+      } catch (error) {
+        console.error("Failed to fetch data:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchData()
+  }, [])
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(reviewLink)
@@ -21,11 +91,20 @@ export default function ReviewsPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // Mock referral data
-  const referrals = [
-    { id: "1", referrer: "Emma Thompson", referee: "Oliver Brown", status: "converted", reward: "£20" },
-    { id: "2", referrer: "Amelia Roberts", referee: "Pending", status: "pending", reward: "£20" },
-  ]
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  // Calculate stats
+  const avgRating =
+    reviews.length > 0 ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1) : "0.0"
+  const totalRewards = referrals.filter((r) => r.status === "converted").length * 20
+  const successfulReferrals = referrals.filter((r) => r.status === "converted").length
+  const pendingReferrals = referrals.filter((r) => r.status === "pending").length
 
   return (
     <div className="space-y-6">
@@ -51,8 +130,8 @@ export default function ReviewsPage() {
           {/* Stats Row */}
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="rounded-xl border border-border bg-card p-5 text-center">
-              <div className="flex items-center justify-center gap-1 text-3xl font-bold text-warning">
-                4.9 <Star className="h-6 w-6 fill-warning" />
+              <div className="flex items-center justify-center gap-1 text-3xl font-bold text-amber-500">
+                {avgRating} <Star className="h-6 w-6 fill-amber-500" />
               </div>
               <p className="text-sm text-muted-foreground mt-1">Average Rating</p>
             </div>
@@ -61,7 +140,7 @@ export default function ReviewsPage() {
               <p className="text-sm text-muted-foreground mt-1">Total Reviews</p>
             </div>
             <div className="rounded-xl border border-border bg-card p-5 text-center">
-              <p className="text-3xl font-bold text-success">{recentlyPassed.length}</p>
+              <p className="text-3xl font-bold text-green-500">{recentlyPassed.length}</p>
               <p className="text-sm text-muted-foreground mt-1">Pending Requests</p>
             </div>
           </div>
@@ -73,11 +152,16 @@ export default function ReviewsPage() {
               Shareable Review Link
             </h3>
             <div className="flex gap-2">
-              <Input value={reviewLink} readOnly className="bg-secondary font-mono text-sm" />
-              <Button variant="outline" onClick={handleCopyLink} className="bg-transparent shrink-0">
-                {copied ? <BadgeCheck className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+              <Input value={reviewLink || "Loading..."} readOnly className="bg-secondary font-mono text-sm" />
+              <Button
+                variant="outline"
+                onClick={handleCopyLink}
+                className="bg-transparent shrink-0"
+                disabled={!reviewLink}
+              >
+                {copied ? <BadgeCheck className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
               </Button>
-              <Button className="shrink-0">
+              <Button className="shrink-0" disabled={!reviewLink}>
                 <Share2 className="mr-2 h-4 w-4" />
                 Share
               </Button>
@@ -89,39 +173,40 @@ export default function ReviewsPage() {
             <div className="rounded-xl border border-border bg-card">
               <div className="flex items-center justify-between border-b border-border px-5 py-4">
                 <h3 className="font-semibold text-foreground flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-warning" />
+                  <Clock className="h-5 w-5 text-amber-500" />
                   Pending Requests
                 </h3>
                 <span className="text-sm text-muted-foreground">{recentlyPassed.length} students</span>
               </div>
               <div className="divide-y divide-border">
-                {recentlyPassed.map((student) => (
-                  <div key={student.id} className="flex items-center gap-4 px-5 py-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-success/10 text-sm font-semibold text-success">
-                      {student.name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")}
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-foreground">{student.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Passed on{" "}
-                        {student.practicalTestDate &&
-                          new Date(student.practicalTestDate).toLocaleDateString("en-GB", {
-                            day: "numeric",
-                            month: "short",
-                          })}
-                      </p>
-                    </div>
-                    <Button size="sm">
-                      <Send className="mr-2 h-3.5 w-3.5" />
-                      Request
-                    </Button>
-                  </div>
-                ))}
-                {recentlyPassed.length === 0 && (
+                {recentlyPassed.length === 0 ? (
                   <div className="px-5 py-8 text-center text-muted-foreground">No pending review requests</div>
+                ) : (
+                  recentlyPassed.map((student) => (
+                    <div key={student.id} className="flex items-center gap-4 px-5 py-4">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/10 text-sm font-semibold text-green-500">
+                        {student.name
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-foreground">{student.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Passed on{" "}
+                          {student.practicalTestDate &&
+                            new Date(student.practicalTestDate).toLocaleDateString("en-GB", {
+                              day: "numeric",
+                              month: "short",
+                            })}
+                        </p>
+                      </div>
+                      <Button size="sm">
+                        <Send className="mr-2 h-3.5 w-3.5" />
+                        Request
+                      </Button>
+                    </div>
+                  ))
                 )}
               </div>
             </div>
@@ -135,40 +220,44 @@ export default function ReviewsPage() {
                 </h3>
               </div>
               <div className="divide-y divide-border">
-                {reviews.map((review) => (
-                  <div key={review.id} className="px-5 py-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <p className="font-medium text-foreground">{review.studentName}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(review.date).toLocaleDateString("en-GB", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                          })}
-                        </p>
+                {reviews.length === 0 ? (
+                  <div className="px-5 py-8 text-center text-muted-foreground">No reviews yet</div>
+                ) : (
+                  reviews.map((review) => (
+                    <div key={review.id} className="px-5 py-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <p className="font-medium text-foreground">{review.studentName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(review.date).toLocaleDateString("en-GB", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Star
+                              key={i}
+                              className={cn(
+                                "h-4 w-4",
+                                i < review.rating ? "fill-amber-500 text-amber-500" : "text-muted-foreground",
+                              )}
+                            />
+                          ))}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        {Array.from({ length: 5 }).map((_, i) => (
-                          <Star
-                            key={i}
-                            className={cn(
-                              "h-4 w-4",
-                              i < review.rating ? "fill-warning text-warning" : "text-muted-foreground",
-                            )}
-                          />
-                        ))}
-                      </div>
+                      <p className="text-sm text-muted-foreground">{review.comment}</p>
+                      {review.isPublic && (
+                        <span className="inline-flex items-center gap-1 text-xs text-green-500 mt-2">
+                          <BadgeCheck className="h-3.5 w-3.5" />
+                          Public
+                        </span>
+                      )}
                     </div>
-                    <p className="text-sm text-muted-foreground">{review.comment}</p>
-                    {review.isPublic && (
-                      <span className="inline-flex items-center gap-1 text-xs text-success mt-2">
-                        <BadgeCheck className="h-3.5 w-3.5" />
-                        Public
-                      </span>
-                    )}
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -178,15 +267,15 @@ export default function ReviewsPage() {
           {/* Referral Stats */}
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="rounded-xl border border-border bg-card p-5 text-center">
-              <p className="text-3xl font-bold text-primary">£40</p>
+              <p className="text-3xl font-bold text-primary">£{totalRewards}</p>
               <p className="text-sm text-muted-foreground mt-1">Total Rewards Earned</p>
             </div>
             <div className="rounded-xl border border-border bg-card p-5 text-center">
-              <p className="text-3xl font-bold text-foreground">2</p>
+              <p className="text-3xl font-bold text-foreground">{successfulReferrals}</p>
               <p className="text-sm text-muted-foreground mt-1">Successful Referrals</p>
             </div>
             <div className="rounded-xl border border-border bg-card p-5 text-center">
-              <p className="text-3xl font-bold text-warning">1</p>
+              <p className="text-3xl font-bold text-amber-500">{pendingReferrals}</p>
               <p className="text-sm text-muted-foreground mt-1">Pending Referrals</p>
             </div>
           </div>
@@ -214,29 +303,33 @@ export default function ReviewsPage() {
               <h3 className="font-semibold text-foreground">Referral History</h3>
             </div>
             <div className="divide-y divide-border">
-              {referrals.map((referral) => (
-                <div key={referral.id} className="flex items-center gap-4 px-5 py-4">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                    <Gift className="h-5 w-5 text-primary" />
+              {referrals.length === 0 ? (
+                <div className="px-5 py-8 text-center text-muted-foreground">No referrals yet</div>
+              ) : (
+                referrals.map((referral) => (
+                  <div key={referral.id} className="flex items-center gap-4 px-5 py-4">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <Gift className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-foreground">
+                        {referral.referrer} → {referral.referee}
+                      </p>
+                      <p className="text-xs text-muted-foreground">Reward: {referral.reward}</p>
+                    </div>
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                        referral.status === "converted"
+                          ? "bg-green-500/10 text-green-500 border border-green-500/20"
+                          : "bg-amber-500/10 text-amber-500 border border-amber-500/20",
+                      )}
+                    >
+                      {referral.status === "converted" ? "Converted" : "Pending"}
+                    </span>
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-foreground">
-                      {referral.referrer} → {referral.referee}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Reward: {referral.reward}</p>
-                  </div>
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                      referral.status === "converted"
-                        ? "bg-success/10 text-success border border-success/20"
-                        : "bg-warning/10 text-warning border border-warning/20",
-                    )}
-                  >
-                    {referral.status === "converted" ? "Converted" : "Pending"}
-                  </span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </TabsContent>

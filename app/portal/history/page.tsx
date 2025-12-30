@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Clock, CheckCircle2, Brain, Target, BookOpen, Loader2 } from "lucide-react"
+import { Clock, CheckCircle2, Brain, Target, BookOpen, Loader2, Calendar } from "lucide-react"
 
 interface LessonSummary {
   summary: string
@@ -23,81 +23,25 @@ interface Lesson {
   aiSummary?: LessonSummary
 }
 
-// Mock completed lessons for history (will be replaced with real data from API)
-const mockLessonHistory: Lesson[] = [
-  {
-    id: "h1",
-    studentId: "1",
-    studentName: "Student",
-    date: "2024-12-20",
-    startTime: "09:00",
-    endTime: "11:00",
-    status: "completed",
-    notes: "Practiced parallel parking and bay parking. Worked on reverse maneuvers.",
-    aiSummary: {
-      summary:
-        "Solid session focusing on parking maneuvers. Parallel parking has improved significantly, showing good spatial awareness. Bay parking still needs refinement.",
-      strengths: [
-        "Good clutch control during slow maneuvers",
-        "Excellent use of reference points",
-        "Calm under pressure",
-      ],
-      weaknesses: ["Bay parking angle consistency", "Occasionally forgets final observation"],
-      nextFocus: "Perfect bay parking technique with consistent angles.",
-      homework: "Visualize the reference points for bay parking. Practice judging distances as a pedestrian.",
-    },
-  },
-  {
-    id: "h2",
-    studentId: "1",
-    studentName: "Student",
-    date: "2024-12-17",
-    startTime: "14:00",
-    endTime: "16:00",
-    status: "completed",
-    notes: "Independent driving session. Covered routes around town centre.",
-    aiSummary: {
-      summary:
-        "First fully independent driving session went very well. Navigated confidently using road signs and showed good route planning instincts.",
-      strengths: ["Confident independent navigation", "Good awareness of road signs", "Safe speed choices"],
-      weaknesses: ["Minor hesitation at complex junctions", "Could plan lane position earlier"],
-      nextFocus: "Build confidence at complex junctions through exposure.",
-      homework: "Study junction layouts on Google Maps for familiar areas. Notice road sign positioning.",
-    },
-  },
-  {
-    id: "h3",
-    studentId: "1",
-    studentName: "Student",
-    date: "2024-12-13",
-    startTime: "09:00",
-    endTime: "11:00",
-    status: "completed",
-    notes: "Dual carriageway and motorway slip roads practice.",
-  },
-  {
-    id: "h4",
-    studentId: "1",
-    studentName: "Student",
-    date: "2024-12-10",
-    startTime: "14:00",
-    endTime: "16:00",
-    status: "completed",
-    notes: "Town centre driving, pedestrian crossings, and traffic light junctions.",
-  },
-]
-
 export default function LessonHistoryPage() {
   const [lessonHistory, setLessonHistory] = useState<Lesson[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
 
   useEffect(() => {
     async function fetchLessons() {
       try {
-        // For now, use mock data - will be replaced with real API call
-        setLessonHistory(mockLessonHistory)
-      } catch (error) {
-        console.error("Failed to fetch lessons:", error)
+        const response = await fetch("/api/student/lessons")
+        if (response.ok) {
+          const data = await response.json()
+          setLessonHistory(data.lessons || [])
+        } else {
+          // No lessons yet - that's fine for new users
+          setLessonHistory([])
+        }
+      } catch (err) {
+        console.error("Failed to fetch lessons:", err)
+        setError("Failed to load lesson history")
       } finally {
         setLoading(false)
       }
@@ -121,6 +65,12 @@ export default function LessonHistoryPage() {
         <p className="text-muted-foreground mt-1">Review your past lessons and feedback</p>
       </div>
 
+      {error && (
+        <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm">
+          {error}
+        </div>
+      )}
+
       {/* Stats Summary */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl border border-border bg-card p-4 text-center">
@@ -140,7 +90,9 @@ export default function LessonHistoryPage() {
       {/* Lesson List */}
       {lessonHistory.length === 0 ? (
         <div className="rounded-xl border border-border bg-card p-8 text-center">
-          <p className="text-muted-foreground">No lessons yet. Book your first lesson to get started!</p>
+          <Calendar className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+          <h3 className="font-semibold text-foreground mb-2">No lessons yet</h3>
+          <p className="text-muted-foreground">Book your first lesson with an instructor to get started!</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -191,30 +143,30 @@ export default function LessonHistoryPage() {
                   <p className="text-sm text-foreground">{lesson.aiSummary.summary}</p>
 
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-lg bg-success/10 p-3">
-                      <h4 className="font-medium text-success flex items-center gap-2 mb-2 text-sm">
+                    <div className="rounded-lg bg-green-500/10 p-3">
+                      <h4 className="font-medium text-green-600 flex items-center gap-2 mb-2 text-sm">
                         <CheckCircle2 className="h-4 w-4" />
                         Strengths
                       </h4>
                       <ul className="space-y-1">
                         {lesson.aiSummary.strengths.map((s, i) => (
                           <li key={i} className="text-xs text-foreground flex items-start gap-2">
-                            <span className="h-1 w-1 rounded-full bg-success mt-1.5 shrink-0" />
+                            <span className="h-1 w-1 rounded-full bg-green-500 mt-1.5 shrink-0" />
                             {s}
                           </li>
                         ))}
                       </ul>
                     </div>
 
-                    <div className="rounded-lg bg-warning/10 p-3">
-                      <h4 className="font-medium text-warning flex items-center gap-2 mb-2 text-sm">
+                    <div className="rounded-lg bg-amber-500/10 p-3">
+                      <h4 className="font-medium text-amber-600 flex items-center gap-2 mb-2 text-sm">
                         <Target className="h-4 w-4" />
                         Focus Areas
                       </h4>
                       <ul className="space-y-1">
                         {lesson.aiSummary.weaknesses.map((w, i) => (
                           <li key={i} className="text-xs text-foreground flex items-start gap-2">
-                            <span className="h-1 w-1 rounded-full bg-warning mt-1.5 shrink-0" />
+                            <span className="h-1 w-1 rounded-full bg-amber-500 mt-1.5 shrink-0" />
                             {w}
                           </li>
                         ))}
