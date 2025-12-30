@@ -3,10 +3,9 @@
 import { useState, useEffect } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DriveasyLogo } from "@/components/driveasy-logo"
-import { Loader2, CheckCircle2, User, Star, Car } from "lucide-react"
+import { Loader2, CheckCircle2, User, Star, Car, ShieldCheck } from "lucide-react"
 
 interface Instructor {
   id: string
@@ -14,37 +13,41 @@ interface Instructor {
   email: string
   phone: string
   carType: string
-  rating: number
   passRate: number
+  verified: boolean
 }
 
 export function JoinPageClient() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const [instructorCode, setInstructorCode] = useState("")
   const [instructor, setInstructor] = useState<Instructor | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [joining, setJoining] = useState(false)
   const [joined, setJoined] = useState(false)
 
   useEffect(() => {
-    const code = searchParams.get("instructor") || searchParams.get("code")
-    if (code) {
-      setInstructorCode(code)
-      lookupInstructor(code)
+    const instructorId = searchParams.get("instructor")
+    const code = searchParams.get("code")
+
+    if (instructorId || code) {
+      lookupInstructor(instructorId, code)
+    } else {
+      setLoading(false)
+      setError("Invalid invite link. Please ask your instructor for a new link.")
     }
   }, [searchParams])
 
-  const lookupInstructor = async (code: string) => {
-    if (!code.trim()) return
-
+  const lookupInstructor = async (instructorId: string | null, code: string | null) => {
     setLoading(true)
     setError("")
-    setInstructor(null)
 
     try {
-      const res = await fetch(`/api/instructor/lookup?code=${encodeURIComponent(code)}`)
+      const params = new URLSearchParams()
+      if (instructorId) params.set("instructor", instructorId)
+      if (code) params.set("code", code)
+
+      const res = await fetch(`/api/instructor/lookup?${params.toString()}`)
       const data = await res.json()
 
       if (!res.ok) {
@@ -54,7 +57,7 @@ export function JoinPageClient() {
 
       setInstructor(data.instructor)
     } catch (err) {
-      setError("Failed to look up instructor. Please try again.")
+      setError("Failed to load instructor details. Please try again.")
     } finally {
       setLoading(false)
     }
@@ -77,6 +80,7 @@ export function JoinPageClient() {
 
       if (!res.ok) {
         if (data.requiresAuth) {
+          // Redirect to registration with instructor ID pre-filled
           router.push(`/auth/register/student?instructor=${instructor.id}`)
           return
         }
@@ -95,6 +99,20 @@ export function JoinPageClient() {
     }
   }
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md space-y-6 text-center">
+          <DriveasyLogo size="lg" />
+          <div className="space-y-2">
+            <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+            <p className="text-muted-foreground">Loading instructor details...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
@@ -105,35 +123,16 @@ export function JoinPageClient() {
         <Card>
           <CardHeader className="text-center">
             <CardTitle>Join Your Instructor</CardTitle>
-            <CardDescription>Enter your instructor's code to connect with them</CardDescription>
+            <CardDescription>{instructor ? `Connect with ${instructor.name}` : "Something went wrong"}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {!instructor && !joined && (
-              <>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Instructor Code</label>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="e.g., JOHN-SMITH-42"
-                      value={instructorCode}
-                      onChange={(e) => setInstructorCode(e.target.value.toUpperCase())}
-                      className="font-mono"
-                    />
-                    <Button
-                      onClick={() => lookupInstructor(instructorCode)}
-                      disabled={loading || !instructorCode.trim()}
-                    >
-                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Find"}
-                    </Button>
-                  </div>
-                </div>
-
-                {error && <p className="text-sm text-destructive">{error}</p>}
-
-                <p className="text-xs text-muted-foreground text-center">
-                  Don't have a code? Ask your driving instructor for their unique code.
-                </p>
-              </>
+            {error && !instructor && (
+              <div className="text-center space-y-4">
+                <p className="text-sm text-destructive">{error}</p>
+                <Button variant="outline" onClick={() => router.push("/auth")}>
+                  Go to Sign Up
+                </Button>
+              </div>
             )}
 
             {instructor && !joined && (
@@ -145,7 +144,15 @@ export function JoinPageClient() {
                     </div>
                     <div>
                       <p className="font-semibold">{instructor.name}</p>
-                      <p className="text-sm text-muted-foreground">Verified Instructor</p>
+                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                        {instructor.verified && (
+                          <>
+                            <ShieldCheck className="h-3.5 w-3.5 text-success" />
+                            <span className="text-success">Verified Instructor</span>
+                          </>
+                        )}
+                        {!instructor.verified && <span>Instructor</span>}
+                      </div>
                     </div>
                   </div>
 
@@ -156,7 +163,7 @@ export function JoinPageClient() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Star className="h-4 w-4 text-warning" />
-                      <span>{instructor.passRate || 85}% pass rate</span>
+                      <span>{instructor.passRate}% pass rate</span>
                     </div>
                   </div>
                 </div>
@@ -174,16 +181,9 @@ export function JoinPageClient() {
                   )}
                 </Button>
 
-                <Button
-                  variant="outline"
-                  className="w-full bg-transparent"
-                  onClick={() => {
-                    setInstructor(null)
-                    setInstructorCode("")
-                  }}
-                >
-                  Search for Different Instructor
-                </Button>
+                <p className="text-xs text-center text-muted-foreground">
+                  By joining, you'll be able to book lessons and track your progress with this instructor.
+                </p>
               </div>
             )}
 
@@ -199,7 +199,10 @@ export function JoinPageClient() {
 
         <p className="text-center text-sm text-muted-foreground">
           New to Driveasy?{" "}
-          <a href="/auth" className="text-primary hover:underline">
+          <a
+            href={`/auth/register/student${instructor ? `?instructor=${instructor.id}` : ""}`}
+            className="text-primary hover:underline"
+          >
             Create an account
           </a>
         </p>
