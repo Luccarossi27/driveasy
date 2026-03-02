@@ -1,4 +1,4 @@
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 import { hashPassword, generateSessionToken, generateInstructorCode } from "@/lib/auth-utils"
 
 export async function POST(request: Request) {
@@ -9,30 +9,54 @@ export async function POST(request: Request) {
       return Response.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    const sql = neon(process.env.DATABASE_URL!)
+    const supabase = await createClient()
 
-    const existingUser = await sql`SELECT id FROM users WHERE email = ${email}`
-    if (existingUser.length > 0) {
+    const { data: existingUser } = await supabase.from("users").select("id").eq("email", email)
+
+    if (existingUser && existingUser.length > 0) {
       return Response.json({ error: "Email already registered" }, { status: 400 })
     }
 
     const passwordHash = hashPassword(password)
 
-    const userResult =
-      await sql`INSERT INTO users (email, password_hash, role) VALUES (${email}, ${passwordHash}, ${role}) RETURNING id`
-    const userId = userResult[0].id
+    const { data: userResult, error: userError } = await supabase
+      .from("users")
+      .insert({ email, password_hash: passwordHash, role })
+      .select("id")
+      .single()
+
+    if (userError || !userResult) {
+      throw new Error("Failed to create user")
+    }
+
+    const userId = userResult.id
 
     if (role === "instructor") {
       const code = generateInstructorCode(firstName, lastName)
-      await sql`INSERT INTO instructors (id, name, email) VALUES (${userId}, ${firstName} || ' ' || ${lastName}, ${email})`
+      await supabase.from("instructors").insert({
+        id: userId,
+        name: `${firstName} ${lastName}`,
+        email,
+        instructor_code: code,
+      })
     } else {
-      await sql`INSERT INTO students (id, first_name, last_name, email, instructor_id) VALUES (${userId}, ${firstName}, ${lastName}, ${email}, NULL)`
+      await supabase.from("students").insert({
+        id: userId,
+        first_name: firstName,
+        last_name: lastName,
+        email,
+        instructor_id: null,
+      })
     }
 
     const token = generateSessionToken()
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
-    await sql`INSERT INTO sessions (user_id, token, expires_at) VALUES (${userId}, ${token}, ${expiresAt})`
+    await supabase.from("sessions").insert({
+      user_id: userId,
+      token,
+      expires_at: expiresAt.toISOString(),
+    })
 
     return Response.json(
       {

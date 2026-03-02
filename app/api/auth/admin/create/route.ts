@@ -1,13 +1,10 @@
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 import { hashPassword } from "@/lib/auth-utils"
 
-// This endpoint creates the first admin account
-// In production, you should secure this or remove it after setup
 export async function POST(request: Request) {
   try {
     const { email, password, setupKey } = await request.json()
 
-    // Simple setup key protection - change this in production
     if (setupKey !== process.env.ADMIN_SETUP_KEY && setupKey !== "drivecoach-admin-setup-2024") {
       return Response.json({ error: "Invalid setup key" }, { status: 403 })
     }
@@ -20,26 +17,27 @@ export async function POST(request: Request) {
       return Response.json({ error: "Password must be at least 8 characters" }, { status: 400 })
     }
 
-    const sql = neon(process.env.DATABASE_URL!)
+    const supabase = await createClient()
 
-    // Check if admin already exists
-    const existing = await sql`SELECT id FROM users WHERE email = ${email}`
-    if (existing.length > 0) {
+    const { data: existing } = await supabase.from("users").select("id").eq("email", email)
+
+    if (existing && existing.length > 0) {
       return Response.json({ error: "User with this email already exists" }, { status: 400 })
     }
 
-    // Check how many admins exist
-    const adminCount = await sql`SELECT COUNT(*) as count FROM users WHERE role = 'admin'`
-    if (Number(adminCount[0]?.count) >= 5) {
+    const { count } = await supabase.from("users").select("*", { count: "exact", head: true }).eq("role", "admin")
+
+    if ((count || 0) >= 5) {
       return Response.json({ error: "Maximum admin accounts reached" }, { status: 400 })
     }
 
     const passwordHash = hashPassword(password)
 
-    await sql`
-      INSERT INTO users (email, password_hash, role)
-      VALUES (${email}, ${passwordHash}, 'admin')
-    `
+    await supabase.from("users").insert({
+      email,
+      password_hash: passwordHash,
+      role: "admin",
+    })
 
     return Response.json({ success: true, message: "Admin account created" }, { status: 201 })
   } catch (error) {

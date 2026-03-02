@@ -1,4 +1,4 @@
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 import { getSessionCookie, clearSessionCookie } from "@/lib/session"
 
 export async function POST() {
@@ -6,8 +6,8 @@ export async function POST() {
     const token = await getSessionCookie()
 
     if (token) {
-      const sql = neon(process.env.DATABASE_URL!)
-      await sql`DELETE FROM sessions WHERE token = ${token}`
+      const supabase = await createClient()
+      await supabase.from("sessions").delete().eq("token", token)
     }
 
     await clearSessionCookie()

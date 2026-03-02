@@ -1,115 +1,144 @@
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 
-export const sql = neon(process.env.DATABASE_URL!)
+// Helper to get supabase client for database operations
+export async function getSupabase() {
+  return await createClient()
+}
 
 // Instructors
 export async function getInstructor(id: string) {
-  const result = await sql`SELECT * FROM instructors WHERE id = ${id}`
-  if (result.length === 0) throw new Error("Instructor not found")
-  return result[0]
+  const supabase = await createClient()
+  const { data, error } = await supabase.from("instructors").select("*").eq("id", id).single()
+
+  if (error || !data) throw new Error("Instructor not found")
+  return data
 }
 
 export async function getInstructorName(instructorId: string) {
-  const result = await sql`SELECT name FROM instructors WHERE id = ${instructorId}`
-  if (result.length === 0) return "Instructor"
-  return result[0].name
+  const supabase = await createClient()
+  const { data } = await supabase.from("instructors").select("name").eq("id", instructorId).single()
+
+  return data?.name || "Instructor"
 }
 
 export async function getInstructorStats(instructorId: string) {
-  const students = await sql`SELECT COUNT(*) as count FROM students WHERE instructor_id = ${instructorId}`
-  const lessons = await sql`SELECT COUNT(*) as count FROM lessons WHERE instructor_id = ${instructorId}`
-  const passedStudents =
-    await sql`SELECT COUNT(*) as count FROM students WHERE instructor_id = ${instructorId} AND test_passed = true`
+  const supabase = await createClient()
 
-  const totalStudents = students[0]?.count || 0
-  const totalLessons = lessons[0]?.count || 0
-  const passedCount = passedStudents[0]?.count || 0
-  const passRate = totalStudents > 0 ? Math.round((passedCount / totalStudents) * 100) : 0
+  const { count: totalStudents } = await supabase
+    .from("students")
+    .select("*", { count: "exact", head: true })
+    .eq("instructor_id", instructorId)
+
+  const { count: totalLessons } = await supabase
+    .from("lessons")
+    .select("*", { count: "exact", head: true })
+    .eq("instructor_id", instructorId)
+
+  const { count: passedCount } = await supabase
+    .from("students")
+    .select("*", { count: "exact", head: true })
+    .eq("instructor_id", instructorId)
+    .eq("test_result", "passed")
+
+  const students = totalStudents || 0
+  const lessons = totalLessons || 0
+  const passed = passedCount || 0
+  const passRate = students > 0 ? Math.round((passed / students) * 100) : 0
 
   return {
     passRate,
-    averageLessonsToPass: totalStudents > 0 ? Math.round(totalLessons / totalStudents) : 0,
-    totalStudentsTaught: totalStudents,
+    averageLessonsToPass: students > 0 ? Math.round(lessons / students) : 0,
+    totalStudentsTaught: students,
     adasCompletionRate: 85,
-    activeStudents: totalStudents,
+    activeStudents: students,
     monthlyRevenue: 0,
   }
 }
 
 export async function getInstructorVerificationStatus(instructorId: string) {
-  const result = await sql`
-    SELECT verification_status FROM instructors WHERE id = ${instructorId}
-  `
-  if (result.length === 0) return null
-  return result[0].verification_status
+  const supabase = await createClient()
+  const { data } = await supabase.from("instructors").select("verification_status").eq("id", instructorId).single()
+
+  return data?.verification_status || null
 }
 
 // Students
 export async function getStudents(instructorId: string) {
-  const result = await sql`
-    SELECT * FROM students 
-    WHERE instructor_id = ${instructorId}
-    ORDER BY created_at DESC
-  `
-  return result
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("students")
+    .select("*")
+    .eq("instructor_id", instructorId)
+    .order("created_at", { ascending: false })
+
+  return data || []
 }
 
 export async function getStudent(id: string) {
-  const result = await sql`SELECT * FROM students WHERE id = ${id}`
-  if (result.length === 0) throw new Error("Student not found")
-  return result[0]
+  const supabase = await createClient()
+  const { data, error } = await supabase.from("students").select("*").eq("id", id).single()
+
+  if (error || !data) throw new Error("Student not found")
+  return data
 }
 
 // Lessons
 export async function getLessons(studentId: string) {
-  const result = await sql`
-    SELECT * FROM lessons 
-    WHERE student_id = ${studentId}
-    ORDER BY scheduled_date DESC
-  `
-  return result
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("lessons")
+    .select("*")
+    .eq("student_id", studentId)
+    .order("scheduled_date", { ascending: false })
+
+  return data || []
 }
 
 export async function getLesson(id: string) {
-  const result = await sql`SELECT * FROM lessons WHERE id = ${id}`
-  if (result.length === 0) throw new Error("Lesson not found")
-  return result[0]
+  const supabase = await createClient()
+  const { data, error } = await supabase.from("lessons").select("*").eq("id", id).single()
+
+  if (error || !data) throw new Error("Lesson not found")
+  return data
 }
 
 // ADAS Training
 export async function getAdasProgress(studentId: string) {
-  const result = await sql`
-    SELECT * FROM adas_training 
-    WHERE student_id = ${studentId}
-  `
-  return result
+  const supabase = await createClient()
+  const { data } = await supabase.from("adas_training").select("*").eq("student_id", studentId)
+
+  return data || []
 }
 
 // Payments
 export async function getPayments(studentId: string) {
-  const result = await sql`
-    SELECT * FROM payments 
-    WHERE student_id = ${studentId}
-    ORDER BY created_at DESC
-  `
-  return result
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("payments")
+    .select("*")
+    .eq("student_id", studentId)
+    .order("created_at", { ascending: false })
+
+  return data || []
 }
 
 export async function getOutstandingBalance(studentId: string) {
-  const result = await sql`
-    SELECT COALESCE(SUM(amount), 0) as total 
-    FROM payments 
-    WHERE student_id = ${studentId} AND status = 'pending'
-  `
-  return result[0]?.total || 0
+  const supabase = await createClient()
+  const { data } = await supabase.from("payments").select("amount").eq("student_id", studentId).eq("status", "pending")
+
+  const total = data?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0
+  return total
 }
 
 // Reviews
 export async function getReviews(instructorId: string) {
-  const result = await sql`
-    SELECT * FROM reviews 
-    WHERE instructor_id = ${instructorId} AND verified = true
-    ORDER BY created_at DESC
-  `
-  return result
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("reviews")
+    .select("*")
+    .eq("instructor_id", instructorId)
+    .eq("verified", true)
+    .order("created_at", { ascending: false })
+
+  return data || []
 }
