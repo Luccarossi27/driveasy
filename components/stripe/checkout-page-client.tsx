@@ -1,15 +1,20 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Elements } from "@stripe/react-stripe-js"
-import { loadStripe } from "@stripe/stripe-js"
+import type { Stripe } from "@stripe/stripe-js"
 import { CheckoutForm } from "@/components/stripe/checkout-form"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { DEFAULT_PACKAGES, formatPrice } from "@/lib/lesson-packages"
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "")
+// Lazy load Stripe to avoid script tag issues during SSR
+const getStripe = (): Promise<Stripe | null> => {
+  return import("@stripe/stripe-js").then((mod) =>
+    mod.loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "")
+  )
+}
 
 export function CheckoutPageClient() {
   const router = useRouter()
@@ -21,8 +26,14 @@ export function CheckoutPageClient() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [instructorName, setInstructorName] = useState("")
+  const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null)
 
   const selectedPackage = packageId ? DEFAULT_PACKAGES.find((p) => p.id === packageId) : null
+
+  // Initialize Stripe on mount
+  useEffect(() => {
+    setStripePromise(getStripe())
+  }, [])
 
   useEffect(() => {
     const initializePayment = async () => {
@@ -108,7 +119,7 @@ export function CheckoutPageClient() {
     )
   }
 
-  if (!clientSecret) {
+  if (!clientSecret || !stripePromise) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center space-y-4">
