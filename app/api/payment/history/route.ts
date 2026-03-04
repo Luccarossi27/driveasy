@@ -1,8 +1,6 @@
 import { cookies } from "next/headers"
 import { getStudentPaymentHistory, getInstructorPaymentHistory } from "@/lib/stripe-helpers"
-import { neon } from "@neondatabase/serverless"
-
-const sql = neon(process.env.DATABASE_URL || "")
+import { createClient } from "@/lib/supabase/server"
 
 export async function GET(request: Request) {
   try {
@@ -13,28 +11,55 @@ export async function GET(request: Request) {
       return Response.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const userResult = await sql("SELECT * FROM users WHERE session_token = $1", [sessionToken])
-    if (!userResult || userResult.length === 0) {
+    const supabase = await createClient()
+
+    // Get session
+    const { data: session } = await supabase
+      .from("sessions")
+      .select("user_id")
+      .eq("token", sessionToken)
+      .gt("expires_at", new Date().toISOString())
+      .single()
+
+    if (!session) {
       return Response.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const user = userResult[0]
-    const userType = user.role
+    // Get user
+    const { data: user } = await supabase
+      .from("users")
+      .select("id, role")
+      .eq("id", session.user_id)
+      .single()
+
+    if (!user) {
+      return Response.json({ error: "User not found" }, { status: 404 })
+    }
 
     let history
 
-    if (userType === "student") {
-      const studentResult = await sql("SELECT id FROM students WHERE id = $1", [user.id])
-      if (!studentResult || studentResult.length === 0) {
+    if (user.role === "student") {
+      const { data: student } = await supabase
+        .from("students")
+        .select("id")
+        .eq("user_id", user.id)
+        .single()
+
+      if (!student) {
         return Response.json({ error: "Student not found" }, { status: 404 })
       }
-      history = await getStudentPaymentHistory(user.id)
-    } else if (userType === "instructor") {
-      const instructorResult = await sql("SELECT id FROM instructors WHERE id = $1", [user.id])
-      if (!instructorResult || instructorResult.length === 0) {
+      history = await getStudentPaymentHistory(student.id)
+    } else if (user.role === "instructor") {
+      const { data: instructor } = await supabase
+        .from("instructors")
+        .select("id")
+        .eq("user_id", user.id)
+        .single()
+
+      if (!instructor) {
         return Response.json({ error: "Instructor not found" }, { status: 404 })
       }
-      history = await getInstructorPaymentHistory(user.id)
+      history = await getInstructorPaymentHistory(instructor.id)
     } else {
       return Response.json({ error: "Invalid user type" }, { status: 400 })
     }

@@ -1,13 +1,5 @@
 import { stripe } from "./stripe"
-import { neon } from "@neondatabase/serverless"
-
-const sql = neon(process.env.DATABASE_URL || "")
-
-interface StripeCustomer {
-  id: string
-  user_id: string
-  stripe_customer_id: string
-}
+import { createClient } from "@/lib/supabase/server"
 
 interface StripeTransaction {
   id: string
@@ -21,11 +13,17 @@ interface StripeTransaction {
 // Get or create Stripe customer for a user
 export async function getOrCreateStripeCustomer(userId: string, email: string, name: string): Promise<string> {
   try {
-    // Check if customer exists in our database
-    const existing = await sql("SELECT stripe_customer_id FROM stripe_customers WHERE user_id = $1", [userId])
+    const supabase = await createClient()
 
-    if (existing.length > 0) {
-      return existing[0].stripe_customer_id
+    // Check if customer exists in our database
+    const { data: existing } = await supabase
+      .from("stripe_customers")
+      .select("stripe_customer_id")
+      .eq("user_id", userId)
+      .single()
+
+    if (existing) {
+      return existing.stripe_customer_id
     }
 
     // Create new Stripe customer
@@ -36,7 +34,9 @@ export async function getOrCreateStripeCustomer(userId: string, email: string, n
     })
 
     // Store in database
-    await sql("INSERT INTO stripe_customers (user_id, stripe_customer_id) VALUES ($1, $2)", [userId, customer.id])
+    await supabase
+      .from("stripe_customers")
+      .insert({ user_id: userId, stripe_customer_id: customer.id })
 
     return customer.id
   } catch (error) {
@@ -55,6 +55,8 @@ export async function createPaymentIntent(
   packageId?: string,
 ): Promise<{ clientSecret: string; paymentIntentId: string }> {
   try {
+    const supabase = await createClient()
+
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountCents,
       currency: "gbp",
@@ -68,12 +70,14 @@ export async function createPaymentIntent(
     })
 
     // Store transaction record
-    await sql(
-      `INSERT INTO stripe_transactions 
-       (stripe_payment_intent_id, student_id, instructor_id, amount_cents, package_id, status) 
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [paymentIntent.id, studentId, instructorId, amountCents, packageId || null, "pending"],
-    )
+    await supabase.from("stripe_transactions").insert({
+      stripe_payment_intent_id: paymentIntent.id,
+      student_id: studentId,
+      instructor_id: instructorId,
+      amount_cents: amountCents,
+      package_id: packageId || null,
+      status: "pending",
+    })
 
     return {
       clientSecret: paymentIntent.client_secret || "",
@@ -88,6 +92,7 @@ export async function createPaymentIntent(
 // Confirm payment (called after Stripe payment succeeds)
 export async function confirmPayment(paymentIntentId: string): Promise<StripeTransaction | null> {
   try {
+    const supabase = await createClient()
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId)
 
     if (paymentIntent.status !== "succeeded") {
@@ -95,19 +100,14 @@ export async function confirmPayment(paymentIntentId: string): Promise<StripeTra
     }
 
     // Update transaction status
-    const updated = await sql(
-      `UPDATE stripe_transactions 
-       SET status = 'succeeded', updated_at = NOW() 
-       WHERE stripe_payment_intent_id = $1 
-       RETURNING *`,
-      [paymentIntentId],
-    )
+    const { data: updated } = await supabase
+      .from("stripe_transactions")
+      .update({ status: "succeeded", updated_at: new Date().toISOString() })
+      .eq("stripe_payment_intent_id", paymentIntentId)
+      .select()
+      .single()
 
-    if (updated.length > 0) {
-      return updated[0]
-    }
-
-    return null
+    return updated || null
   } catch (error) {
     console.error("[Stripe] Error confirming payment:", error)
     throw error
@@ -117,14 +117,16 @@ export async function confirmPayment(paymentIntentId: string): Promise<StripeTra
 // Get payment history for student
 export async function getStudentPaymentHistory(studentId: string): Promise<StripeTransaction[]> {
   try {
-    const transactions = await sql(
-      `SELECT * FROM stripe_transactions 
-       WHERE student_id = $1 
-       ORDER BY created_at DESC 
-       LIMIT 50`,
-      [studentId],
-    )
-    return transactions
+    const supabase = await createClient()
+
+    const { data: transactions } = await supabase
+      .from("stripe_transactions")
+      .select("*")
+      .eq("student_id", studentId)
+      .order("created_at", { ascending: false })
+      .limit(50)
+
+    return transactions || []
   } catch (error) {
     console.error("[Stripe] Error fetching student payments:", error)
     throw error
@@ -134,14 +136,17 @@ export async function getStudentPaymentHistory(studentId: string): Promise<Strip
 // Get payment history for instructor
 export async function getInstructorPaymentHistory(instructorId: string): Promise<StripeTransaction[]> {
   try {
-    const transactions = await sql(
-      `SELECT * FROM stripe_transactions 
-       WHERE instructor_id = $1 AND status = 'succeeded'
-       ORDER BY created_at DESC 
-       LIMIT 50`,
-      [instructorId],
-    )
-    return transactions
+    const supabase = await createClient()
+
+    const { data: transactions } = await supabase
+      .from("stripe_transactions")
+      .select("*")
+      .eq("instructor_id", instructorId)
+      .eq("status", "succeeded")
+      .order("created_at", { ascending: false })
+      .limit(50)
+
+    return transactions || []
   } catch (error) {
     console.error("[Stripe] Error fetching instructor payments:", error)
     throw error
@@ -155,21 +160,30 @@ export async function getInstructorEarnings(instructorId: string): Promise<{
   transactionCount: number
 }> {
   try {
-    const result = await sql(
-      `SELECT 
-        SUM(amount_cents) as total_amount,
-        SUM(CASE WHEN created_at >= NOW() - INTERVAL '30 days' THEN amount_cents ELSE 0 END) as monthly_amount,
-        COUNT(*) as transaction_count
-       FROM stripe_transactions 
-       WHERE instructor_id = $1 AND status = 'succeeded'`,
-      [instructorId],
-    )
+    const supabase = await createClient()
 
-    const row = result[0]
+    const { data: transactions } = await supabase
+      .from("stripe_transactions")
+      .select("amount_cents, created_at")
+      .eq("instructor_id", instructorId)
+      .eq("status", "succeeded")
+
+    if (!transactions || transactions.length === 0) {
+      return { totalEarnings: 0, monthlyEarnings: 0, transactionCount: 0 }
+    }
+
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+
+    const totalAmount = transactions.reduce((sum, t) => sum + (t.amount_cents || 0), 0)
+    const monthlyAmount = transactions
+      .filter((t) => new Date(t.created_at) >= thirtyDaysAgo)
+      .reduce((sum, t) => sum + (t.amount_cents || 0), 0)
+
     return {
-      totalEarnings: (row.total_amount || 0) / 100,
-      monthlyEarnings: (row.monthly_amount || 0) / 100,
-      transactionCount: row.transaction_count || 0,
+      totalEarnings: totalAmount / 100,
+      monthlyEarnings: monthlyAmount / 100,
+      transactionCount: transactions.length,
     }
   } catch (error) {
     console.error("[Stripe] Error calculating earnings:", error)
@@ -180,18 +194,18 @@ export async function getInstructorEarnings(instructorId: string): Promise<{
 // Refund payment
 export async function refundPayment(paymentIntentId: string, reason?: string): Promise<boolean> {
   try {
+    const supabase = await createClient()
+
     const refund = await stripe.refunds.create({
       payment_intent: paymentIntentId,
-      reason: (reason as any) || "requested_by_customer",
+      reason: (reason as "requested_by_customer" | "duplicate" | "fraudulent") || "requested_by_customer",
     })
 
     // Update transaction status
-    await sql(
-      `UPDATE stripe_transactions 
-       SET status = 'refunded', updated_at = NOW() 
-       WHERE stripe_payment_intent_id = $1`,
-      [paymentIntentId],
-    )
+    await supabase
+      .from("stripe_transactions")
+      .update({ status: "refunded", updated_at: new Date().toISOString() })
+      .eq("stripe_payment_intent_id", paymentIntentId)
 
     return refund.status === "succeeded"
   } catch (error) {

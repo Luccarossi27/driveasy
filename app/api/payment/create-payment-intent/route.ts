@@ -1,8 +1,6 @@
 import { cookies } from "next/headers"
 import { getOrCreateStripeCustomer, createPaymentIntent } from "@/lib/stripe-helpers"
-import { neon } from "@neondatabase/serverless"
-
-const sql = neon(process.env.DATABASE_URL || "")
+import { createClient } from "@/lib/supabase/server"
 
 export async function POST(request: Request) {
   try {
@@ -13,19 +11,42 @@ export async function POST(request: Request) {
       return Response.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Get current user
-    const userResult = await sql("SELECT * FROM users WHERE session_token = $1", [sessionToken])
-    if (!userResult || userResult.length === 0) {
+    const supabase = await createClient()
+
+    // Get session
+    const { data: session } = await supabase
+      .from("sessions")
+      .select("user_id")
+      .eq("token", sessionToken)
+      .gt("expires_at", new Date().toISOString())
+      .single()
+
+    if (!session) {
       return Response.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const user = userResult[0]
-    const studentResult = await sql("SELECT * FROM students WHERE id = $1", [user.id])
-    if (!studentResult || studentResult.length === 0) {
+    // Get user
+    const { data: user } = await supabase
+      .from("users")
+      .select("id, email, name")
+      .eq("id", session.user_id)
+      .single()
+
+    if (!user) {
+      return Response.json({ error: "User not found" }, { status: 404 })
+    }
+
+    // Get student
+    const { data: student } = await supabase
+      .from("students")
+      .select("id")
+      .eq("user_id", user.id)
+      .single()
+
+    if (!student) {
       return Response.json({ error: "Student not found" }, { status: 404 })
     }
 
-    const student = studentResult[0]
     const { packageId, instructorId, amountCents } = await request.json()
 
     if (!packageId || !instructorId || !amountCents) {
@@ -33,15 +54,25 @@ export async function POST(request: Request) {
     }
 
     // Get instructor details
-    const instructorResult = await sql("SELECT * FROM instructors WHERE id = $1", [instructorId])
-    if (!instructorResult || instructorResult.length === 0) {
+    const { data: instructor } = await supabase
+      .from("instructors")
+      .select("id, user_id")
+      .eq("id", instructorId)
+      .single()
+
+    if (!instructor) {
       return Response.json({ error: "Instructor not found" }, { status: 404 })
     }
 
-    const instructor = instructorResult[0]
+    // Get instructor user name
+    const { data: instructorUser } = await supabase
+      .from("users")
+      .select("name")
+      .eq("id", instructor.user_id)
+      .single()
 
     // Create or get Stripe customer
-    const customerId = await getOrCreateStripeCustomer(user.id, user.email, `${user.name}`)
+    const customerId = await getOrCreateStripeCustomer(user.id, user.email, user.name || "")
 
     // Create payment intent
     const { clientSecret } = await createPaymentIntent(
@@ -55,7 +86,7 @@ export async function POST(request: Request) {
 
     return Response.json({
       clientSecret,
-      instructorName: instructor.name,
+      instructorName: instructorUser?.name || "Instructor",
     })
   } catch (error) {
     console.error("[Payment] Error:", error)

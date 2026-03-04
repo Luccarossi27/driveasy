@@ -1,9 +1,9 @@
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 
 export async function POST(request: Request) {
   try {
-    const sql = neon(process.env.DATABASE_URL!)
+    const supabase = await createClient()
     const body = await request.json()
     const { documentId, action, rejectionReason } = body
 
@@ -13,14 +13,14 @@ export async function POST(request: Request) {
 
     const status = action === "approve" ? "approved" : "rejected"
 
-    await sql`
-      UPDATE instructor_documents 
-      SET 
-        status = ${status},
-        rejection_reason = ${rejectionReason || null},
-        reviewed_at = NOW()
-      WHERE id = ${documentId}
-    `
+    await supabase
+      .from("instructor_documents")
+      .update({
+        status,
+        rejection_reason: rejectionReason || null,
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq("id", documentId)
 
     return NextResponse.json({ success: true })
   } catch (error) {

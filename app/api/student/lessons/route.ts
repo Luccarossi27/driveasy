@@ -1,4 +1,4 @@
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
 
 export async function GET() {
@@ -10,46 +10,43 @@ export async function GET() {
       return Response.json({ error: "Not authenticated" }, { status: 401 })
     }
 
-    const sql = neon(process.env.DATABASE_URL!)
+    const supabase = await createClient()
 
-    // Get user from session
-    const sessions = await sql`
-      SELECT u.id, u.role 
-      FROM sessions s
-      JOIN users u ON s.user_id = u.id
-      WHERE s.token = ${sessionToken}
-      AND s.expires_at > NOW()
-    `
+    // Get session
+    const { data: session } = await supabase
+      .from("sessions")
+      .select("user_id")
+      .eq("token", sessionToken)
+      .gt("expires_at", new Date().toISOString())
+      .single()
 
-    if (sessions.length === 0) {
+    if (!session) {
       return Response.json({ error: "Invalid session" }, { status: 401 })
     }
 
-    const userId = sessions[0].id
+    // Get student
+    const { data: student } = await supabase
+      .from("students")
+      .select("id, first_name, last_name")
+      .eq("user_id", session.user_id)
+      .single()
+
+    if (!student) {
+      return Response.json({ lessons: [] })
+    }
 
     // Get lessons for this student
-    const lessons = await sql`
-      SELECT 
-        l.id,
-        l.student_id,
-        s.first_name || ' ' || s.last_name as student_name,
-        l.date,
-        l.start_time,
-        l.end_time,
-        l.status,
-        l.notes,
-        l.ai_summary
-      FROM lessons l
-      JOIN students s ON l.student_id = s.id
-      WHERE l.student_id = ${userId}
-      AND l.status = 'completed'
-      ORDER BY l.date DESC
-    `
+    const { data: lessons } = await supabase
+      .from("lessons")
+      .select("id, student_id, date, start_time, end_time, status, notes, ai_summary")
+      .eq("student_id", student.id)
+      .eq("status", "completed")
+      .order("date", { ascending: false })
 
-    const formattedLessons = lessons.map((lesson) => ({
+    const formattedLessons = (lessons || []).map((lesson) => ({
       id: lesson.id,
       studentId: lesson.student_id,
-      studentName: lesson.student_name,
+      studentName: `${student.first_name} ${student.last_name}`,
       date: lesson.date,
       startTime: lesson.start_time,
       endTime: lesson.end_time,

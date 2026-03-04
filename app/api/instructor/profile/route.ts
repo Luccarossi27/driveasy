@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { sql } from "@/lib/db"
+import { createClient } from "@/lib/supabase/server"
 
 export const dynamic = "force-dynamic"
 
@@ -13,45 +13,41 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Get instructor profile from session
-    const sessionResult = await sql`
-      SELECT s.user_id, u.name, u.email, u.role
-      FROM sessions s
-      JOIN users u ON s.user_id = u.id
-      WHERE s.token = ${sessionToken}
-        AND s.expires_at > NOW()
-    `
+    const supabase = await createClient()
 
-    if (sessionResult.length === 0) {
+    // Get session
+    const { data: session } = await supabase
+      .from("sessions")
+      .select("user_id")
+      .eq("token", sessionToken)
+      .gt("expires_at", new Date().toISOString())
+      .single()
+
+    if (!session) {
       return NextResponse.json({ error: "Invalid session" }, { status: 401 })
     }
 
-    const user = sessionResult[0]
+    // Get user
+    const { data: user } = await supabase
+      .from("users")
+      .select("id, name, email, role")
+      .eq("id", session.user_id)
+      .single()
 
-    if (user.role !== "instructor") {
+    if (!user || user.role !== "instructor") {
       return NextResponse.json({ error: "Not an instructor" }, { status: 403 })
     }
 
     // Get instructor details
-    const instructorResult = await sql`
-      SELECT 
-        id,
-        phone,
-        car_type,
-        transmission_type,
-        service_areas,
-        hourly_rate,
-        pass_rate,
-        verification_status
-      FROM instructors
-      WHERE user_id = ${user.user_id}
-    `
+    const { data: instructor } = await supabase
+      .from("instructors")
+      .select("id, phone, car_type, transmission_type, service_areas, hourly_rate, pass_rate, verification_status")
+      .eq("user_id", user.id)
+      .single()
 
-    if (instructorResult.length === 0) {
+    if (!instructor) {
       return NextResponse.json({ error: "Instructor profile not found" }, { status: 404 })
     }
-
-    const instructor = instructorResult[0]
 
     return NextResponse.json({
       instructor: {

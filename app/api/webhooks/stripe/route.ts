@@ -1,8 +1,6 @@
 import { stripe } from "@/lib/stripe"
 import { confirmPayment } from "@/lib/stripe-helpers"
-import { neon } from "@neondatabase/serverless"
-
-const sql = neon(process.env.DATABASE_URL || "")
+import { createClient } from "@/lib/supabase/server"
 
 export async function POST(request: Request) {
   const body = await request.text()
@@ -10,6 +8,7 @@ export async function POST(request: Request) {
 
   try {
     const event = stripe.webhooks.constructEvent(body, signature, process.env.STRIPE_WEBHOOK_SECRET || "")
+    const supabase = await createClient()
 
     switch (event.type) {
       case "payment_intent.succeeded": {
@@ -18,27 +17,36 @@ export async function POST(request: Request) {
 
         if (transaction) {
           // Create lesson booking
-          await sql(
-            `INSERT INTO lessons (instructor_id, student_id, status) 
-             VALUES ($1, $2, 'scheduled')`,
-            [transaction.instructor_id, transaction.student_id],
-          )
+          await supabase.from("lessons").insert({
+            instructor_id: transaction.instructor_id,
+            student_id: transaction.student_id,
+            status: "scheduled",
+          })
 
           // Update student balance (reduce by payment amount)
           const amountInPounds = transaction.amount_cents / 100
-          await sql(`UPDATE students SET balance = balance - $1 WHERE id = $2`, [
-            amountInPounds,
-            transaction.student_id,
-          ])
+          const { data: student } = await supabase
+            .from("students")
+            .select("balance")
+            .eq("id", transaction.student_id)
+            .single()
+
+          if (student) {
+            await supabase
+              .from("students")
+              .update({ balance: (student.balance || 0) - amountInPounds })
+              .eq("id", transaction.student_id)
+          }
         }
         break
       }
 
       case "payment_intent.payment_failed": {
         const paymentIntent = event.data.object
-        await sql(`UPDATE stripe_transactions SET status = 'failed' WHERE stripe_payment_intent_id = $1`, [
-          paymentIntent.id,
-        ])
+        await supabase
+          .from("stripe_transactions")
+          .update({ status: "failed" })
+          .eq("stripe_payment_intent_id", paymentIntent.id)
         break
       }
     }

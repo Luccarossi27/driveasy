@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { sql } from "@/lib/db"
+import { createClient } from "@/lib/supabase/server"
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,60 +11,58 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Instructor code or ID is required" }, { status: 400 })
     }
 
-    let result
+    const supabase = await createClient()
+    let instructorData = null
 
     if (instructorId) {
       // Direct lookup by instructor ID (from shareable link)
-      result = await sql`
-        SELECT 
-          i.id,
-          u.name,
-          u.email,
-          i.phone,
-          i.car_type,
-          i.pass_rate,
-          i.verification_status
-        FROM instructors i
-        JOIN users u ON i.user_id = u.id
-        WHERE i.id = ${instructorId}::uuid
-      `
+      const { data: instructor } = await supabase
+        .from("instructors")
+        .select("id, phone, car_type, pass_rate, verification_status, user_id")
+        .eq("id", instructorId)
+        .single()
+
+      if (instructor) {
+        const { data: user } = await supabase
+          .from("users")
+          .select("name, email")
+          .eq("id", instructor.user_id)
+          .single()
+
+        instructorData = { ...instructor, name: user?.name, email: user?.email }
+      }
     } else if (code) {
       // Lookup by instructor code (legacy support)
-      result = await sql`
-        SELECT 
-          i.id,
-          u.name,
-          u.email,
-          i.phone,
-          i.car_type,
-          i.pass_rate,
-          i.verification_status
-        FROM instructors i
-        JOIN users u ON i.user_id = u.id
-        WHERE i.instructor_code = ${code.toUpperCase()}
-      `
+      const { data: instructor } = await supabase
+        .from("instructors")
+        .select("id, phone, car_type, pass_rate, verification_status, user_id")
+        .eq("instructor_code", code.toUpperCase())
+        .single()
+
+      if (instructor) {
+        const { data: user } = await supabase
+          .from("users")
+          .select("name, email")
+          .eq("id", instructor.user_id)
+          .single()
+
+        instructorData = { ...instructor, name: user?.name, email: user?.email }
+      }
     }
 
-    if (!result || result.length === 0) {
+    if (!instructorData) {
       return NextResponse.json({ error: "Instructor not found" }, { status: 404 })
     }
 
-    const instructor = result[0]
-
-    // Check if instructor is verified (optional - you may want to allow unverified during testing)
-    // if (instructor.verification_status !== 'approved') {
-    //   return NextResponse.json({ error: "Instructor not verified yet" }, { status: 403 })
-    // }
-
     return NextResponse.json({
       instructor: {
-        id: instructor.id,
-        name: instructor.name,
-        email: instructor.email,
-        phone: instructor.phone,
-        carType: instructor.car_type,
-        passRate: instructor.pass_rate || 85,
-        verified: instructor.verification_status === "approved",
+        id: instructorData.id,
+        name: instructorData.name,
+        email: instructorData.email,
+        phone: instructorData.phone,
+        carType: instructorData.car_type,
+        passRate: instructorData.pass_rate || 85,
+        verified: instructorData.verification_status === "approved",
       },
     })
   } catch (error) {

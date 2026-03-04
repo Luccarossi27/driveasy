@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic"
 
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,44 +10,54 @@ import Link from "next/link"
 import { DriveasyLogo } from "@/components/driveasy-logo"
 
 async function verifyAdmin(sessionToken: string) {
-  const sql = neon(process.env.DATABASE_URL!)
+  const supabase = await createClient()
 
-  const sessions = await sql`
-    SELECT u.id, u.role, u.email 
-    FROM sessions s 
-    JOIN users u ON s.user_id = u.id 
-    WHERE s.token = ${sessionToken} 
-    AND s.expires_at > NOW()
-    AND u.role = 'admin'
-  `
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("user_id")
+    .eq("token", sessionToken)
+    .gt("expires_at", new Date().toISOString())
+    .single()
 
-  return sessions.length > 0 ? sessions[0] : null
+  if (!session) return null
+
+  const { data: user } = await supabase
+    .from("users")
+    .select("id, role, email")
+    .eq("id", session.user_id)
+    .eq("role", "admin")
+    .single()
+
+  return user || null
 }
 
 async function getAdminStats() {
-  const sql = neon(process.env.DATABASE_URL!)
+  const supabase = await createClient()
 
-  const [pendingCount] = await sql`
-    SELECT COUNT(*) as count FROM instructors WHERE verification_status = 'under_review'
-  `
+  const { count: pendingCount } = await supabase
+    .from("instructors")
+    .select("*", { count: "exact", head: true })
+    .eq("verification_status", "under_review")
 
-  const [approvedCount] = await sql`
-    SELECT COUNT(*) as count FROM instructors WHERE verification_status = 'approved'
-  `
+  const { count: approvedCount } = await supabase
+    .from("instructors")
+    .select("*", { count: "exact", head: true })
+    .eq("verification_status", "approved")
 
-  const [totalInstructors] = await sql`
-    SELECT COUNT(*) as count FROM instructors
-  `
+  const { count: totalInstructors } = await supabase
+    .from("instructors")
+    .select("*", { count: "exact", head: true })
 
-  const [pendingDocs] = await sql`
-    SELECT COUNT(*) as count FROM instructor_documents WHERE status = 'pending'
-  `
+  const { count: pendingDocs } = await supabase
+    .from("instructor_documents")
+    .select("*", { count: "exact", head: true })
+    .eq("status", "pending")
 
   return {
-    pending: Number(pendingCount?.count || 0),
-    approved: Number(approvedCount?.count || 0),
-    total: Number(totalInstructors?.count || 0),
-    pendingDocs: Number(pendingDocs?.count || 0),
+    pending: pendingCount || 0,
+    approved: approvedCount || 0,
+    total: totalInstructors || 0,
+    pendingDocs: pendingDocs || 0,
   }
 }
 

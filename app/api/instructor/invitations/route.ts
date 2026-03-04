@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { sql } from "@/lib/db"
+import { createClient } from "@/lib/supabase/server"
 import { verifySession } from "@/lib/auth-utils"
 import crypto from "crypto"
 
@@ -19,28 +19,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Get instructor ID
-    const instructorResult = await sql`
-      SELECT id, instructor_code FROM instructors WHERE user_id = ${session.userId}
-    `
+    const supabase = await createClient()
 
-    if (instructorResult.length === 0) {
+    // Get instructor
+    const { data: instructor } = await supabase
+      .from("instructors")
+      .select("id, instructor_code")
+      .eq("user_id", session.userId)
+      .single()
+
+    if (!instructor) {
       return NextResponse.json({ error: "Instructor not found" }, { status: 404 })
     }
 
-    const instructor = instructorResult[0]
-
     // Fetch invitations
-    const invitations = await sql`
-      SELECT id, student_email, status, created_at, accepted_at, expires_at
-      FROM student_invitations
-      WHERE instructor_id = ${instructor.id}
-      ORDER BY created_at DESC
-      LIMIT 20
-    `
+    const { data: invitations } = await supabase
+      .from("student_invitations")
+      .select("id, student_email, status, created_at, accepted_at, expires_at")
+      .eq("instructor_id", instructor.id)
+      .order("created_at", { ascending: false })
+      .limit(20)
 
     return NextResponse.json({
-      invitations,
+      invitations: invitations || [],
       instructorCode: instructor.instructor_code,
     })
   } catch (error) {
@@ -70,31 +71,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Student email is required" }, { status: 400 })
     }
 
-    // Get instructor ID
-    const instructorResult = await sql`
-      SELECT id FROM instructors WHERE user_id = ${session.userId}
-    `
+    const supabase = await createClient()
 
-    if (instructorResult.length === 0) {
+    // Get instructor ID
+    const { data: instructor } = await supabase
+      .from("instructors")
+      .select("id")
+      .eq("user_id", session.userId)
+      .single()
+
+    if (!instructor) {
       return NextResponse.json({ error: "Instructor not found" }, { status: 404 })
     }
-
-    const instructorId = instructorResult[0].id
 
     // Generate unique invitation code
     const invitationCode = crypto.randomBytes(16).toString("hex")
 
-    // Create invitation
-    await sql`
-      INSERT INTO student_invitations (instructor_id, student_email, invitation_code)
-      VALUES (${instructorId}, ${studentEmail.toLowerCase()}, ${invitationCode})
-      ON CONFLICT (instructor_id, student_email) 
-      DO UPDATE SET 
-        invitation_code = ${invitationCode},
-        status = 'pending',
-        created_at = NOW(),
-        expires_at = NOW() + INTERVAL '30 days'
-    `
+    // Create or update invitation
+    const { error } = await supabase
+      .from("student_invitations")
+      .upsert({
+        instructor_id: instructor.id,
+        student_email: studentEmail.toLowerCase(),
+        invitation_code: invitationCode,
+        status: "pending",
+        created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      }, {
+        onConflict: "instructor_id,student_email",
+      })
+
+    if (error) {
+      console.error("Invitation error:", error)
+      return NextResponse.json({ error: "Failed to create invitation" }, { status: 500 })
+    }
 
     return NextResponse.json({
       success: true,

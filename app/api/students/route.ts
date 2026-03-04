@@ -1,35 +1,49 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 
 export async function GET(req: NextRequest) {
   try {
     const cookieStore = await cookies()
-    const sessionToken = cookieStore.get("session_token")?.value
+    const sessionToken = cookieStore.get("drivecoach_session")?.value
 
     if (!sessionToken) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const sql = neon(process.env.DATABASE_URL!)
+    const supabase = await createClient()
 
-    // Get session and user info
-    const sessions = await sql`
-      SELECT * FROM sessions WHERE token = $1
-    `[sessionToken]
+    // Get session
+    const { data: session } = await supabase
+      .from("sessions")
+      .select("user_id")
+      .eq("token", sessionToken)
+      .gt("expires_at", new Date().toISOString())
+      .single()
 
-    if (sessions.length === 0) {
+    if (!session) {
       return NextResponse.json({ error: "Invalid session" }, { status: 401 })
     }
 
-    const userId = sessions[0].user_id
+    // Get instructor
+    const { data: instructor } = await supabase
+      .from("instructors")
+      .select("id")
+      .eq("user_id", session.user_id)
+      .single()
+
+    if (!instructor) {
+      return NextResponse.json({ error: "Instructor not found" }, { status: 404 })
+    }
 
     // Get all students for this instructor
-    const students = await sql`
-      SELECT * FROM students WHERE instructor_id = $1 ORDER BY created_at DESC
-    `[userId]
+    const { data: students } = await supabase
+      .from("students")
+      .select("*")
+      .eq("instructor_id", instructor.id)
+      .order("created_at", { ascending: false })
 
-    return NextResponse.json(students)
+    return NextResponse.json(students || [])
   } catch (error) {
     console.error("Error fetching students:", error)
     return NextResponse.json({ error: "Failed to fetch students" }, { status: 500 })
