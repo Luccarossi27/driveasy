@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { sql } from "@/lib/db"
+import { createClient } from "@/lib/supabase/server"
 import { verifySession } from "@/lib/auth-utils"
 
 export async function POST(request: NextRequest) {
@@ -36,29 +36,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Instructor ID is required" }, { status: 400 })
     }
 
-    // Check if instructor exists and is verified
-    const instructorResult = await sql`
-      SELECT id, verification_status FROM instructors WHERE id = ${instructorId}
-    `
+    const supabase = await createClient()
 
-    if (instructorResult.length === 0) {
+    // Check if instructor exists and is verified
+    const { data: instructor } = await supabase
+      .from("instructors")
+      .select("id, verification_status")
+      .eq("id", instructorId)
+      .single()
+
+    if (!instructor) {
       return NextResponse.json({ error: "Instructor not found" }, { status: 404 })
     }
 
-    if (instructorResult[0].verification_status !== "approved") {
+    if (instructor.verification_status !== "approved") {
       return NextResponse.json({ error: "Instructor is not verified" }, { status: 400 })
     }
 
-    // Get student ID
-    const studentResult = await sql`
-      SELECT id, instructor_id FROM students WHERE user_id = ${session.userId}
-    `
+    // Get student
+    const { data: student } = await supabase
+      .from("students")
+      .select("id, instructor_id")
+      .eq("user_id", session.userId)
+      .single()
 
-    if (studentResult.length === 0) {
+    if (!student) {
       return NextResponse.json({ error: "Student profile not found" }, { status: 404 })
     }
-
-    const student = studentResult[0]
 
     // Check if student already has this instructor
     if (student.instructor_id === instructorId) {
@@ -66,11 +70,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Update student's instructor
-    await sql`
-      UPDATE students 
-      SET instructor_id = ${instructorId}, updated_at = NOW()
-      WHERE id = ${student.id}
-    `
+    await supabase
+      .from("students")
+      .update({ instructor_id: instructorId, updated_at: new Date().toISOString() })
+      .eq("id", student.id)
 
     return NextResponse.json({ success: true, message: "Successfully joined instructor" })
   } catch (error) {

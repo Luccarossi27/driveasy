@@ -1,4 +1,4 @@
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
 
 export async function GET(request: Request) {
@@ -10,58 +10,61 @@ export async function GET(request: Request) {
       return Response.json({ error: "Not authenticated" }, { status: 401 })
     }
 
-    const sql = neon(process.env.DATABASE_URL!)
+    const supabase = await createClient()
 
-    // Get instructor from session
-    const sessions = await sql`
-      SELECT u.id, u.role 
-      FROM sessions s
-      JOIN users u ON s.user_id = u.id
-      WHERE s.token = ${sessionToken}
-      AND s.expires_at > NOW()
-    `
+    // Get session
+    const { data: session } = await supabase
+      .from("sessions")
+      .select("user_id")
+      .eq("token", sessionToken)
+      .gt("expires_at", new Date().toISOString())
+      .single()
 
-    if (sessions.length === 0 || sessions[0].role !== "instructor") {
+    if (!session) {
+      return Response.json({ error: "Invalid session" }, { status: 401 })
+    }
+
+    // Get user role
+    const { data: user } = await supabase
+      .from("users")
+      .select("role")
+      .eq("id", session.user_id)
+      .single()
+
+    if (!user || user.role !== "instructor") {
       return Response.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const instructorId = sessions[0].id
+    // Get instructor
+    const { data: instructor } = await supabase
+      .from("instructors")
+      .select("id")
+      .eq("user_id", session.user_id)
+      .single()
+
+    if (!instructor) {
+      return Response.json({ error: "Instructor not found" }, { status: 404 })
+    }
 
     // Check for status filter
     const url = new URL(request.url)
     const statusFilter = url.searchParams.get("status")
 
-    let students
+    let query = supabase
+      .from("students")
+      .select("id, first_name, last_name, email, status, practical_test_date")
+      .eq("instructor_id", instructor.id)
+      .order("created_at", { ascending: false })
+
     if (statusFilter) {
-      students = await sql`
-        SELECT 
-          id,
-          first_name || ' ' || last_name as name,
-          email,
-          status,
-          practical_test_date
-        FROM students
-        WHERE instructor_id = ${instructorId}
-        AND status = ${statusFilter}
-        ORDER BY created_at DESC
-      `
-    } else {
-      students = await sql`
-        SELECT 
-          id,
-          first_name || ' ' || last_name as name,
-          email,
-          status,
-          practical_test_date
-        FROM students
-        WHERE instructor_id = ${instructorId}
-        ORDER BY created_at DESC
-      `
+      query = query.eq("status", statusFilter)
     }
 
-    const formattedStudents = students.map((s) => ({
+    const { data: students } = await query
+
+    const formattedStudents = (students || []).map((s) => ({
       id: s.id,
-      name: s.name,
+      name: `${s.first_name} ${s.last_name}`,
       email: s.email,
       status: s.status,
       practicalTestDate: s.practical_test_date,

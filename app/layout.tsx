@@ -1,7 +1,6 @@
 import type React from "react"
 import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
-import { Analytics } from "@vercel/analytics/next"
 import { ThemeProvider } from "next-themes"
 import { ThemeToggle } from "@/components/theme-toggle"
 import "./globals.css"
@@ -15,21 +14,8 @@ export const metadata: Metadata = {
     "Driveasy: Smart platform for driving instructors to manage students, track progress, and grow their business. Student portal for lesson booking and progress tracking.",
   generator: "v0.app",
   icons: {
-    icon: [
-      {
-        url: "/icon-light-32x32.png",
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        url: "/icon-dark-32x32.png",
-        media: "(prefers-color-scheme: dark)",
-      },
-      {
-        url: "/icon.svg",
-        type: "image/svg+xml",
-      },
-    ],
-    apple: "/apple-icon.png",
+    icon: "/driveasy-logo.png",
+    apple: "/driveasy-logo.png",
   },
 }
 
@@ -41,12 +27,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="font-sans antialiased">
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <div className="fixed top-4 right-4 z-50">
             <ThemeToggle />
           </div>
           {children}
-          <Analytics />
         </ThemeProvider>
       </body>
     </html>

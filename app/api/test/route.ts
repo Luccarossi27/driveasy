@@ -1,16 +1,18 @@
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 
 export async function GET() {
   try {
-    const sql = neon(process.env.DATABASE_URL!)
+    const supabase = await createClient()
 
     // Test connection by querying instructors table
-    const result = await sql`SELECT COUNT(*) as count FROM instructors`
+    const { count } = await supabase
+      .from("instructors")
+      .select("*", { count: "exact", head: true })
 
     return Response.json({
       success: true,
       message: "Database connected successfully",
-      instructorCount: result[0]?.count || 0,
+      instructorCount: count || 0,
     })
   } catch (error) {
     return Response.json(

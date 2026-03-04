@@ -1,4 +1,4 @@
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
 
 export async function GET() {
@@ -10,30 +10,44 @@ export async function GET() {
       return Response.json({ error: "Not authenticated" }, { status: 401 })
     }
 
-    const sql = neon(process.env.DATABASE_URL!)
+    const supabase = await createClient()
 
-    // Get instructor from session
-    const sessions = await sql`
-      SELECT u.id, u.role 
-      FROM sessions s
-      JOIN users u ON s.user_id = u.id
-      WHERE s.token = ${sessionToken}
-      AND s.expires_at > NOW()
-    `
+    // Get session
+    const { data: session } = await supabase
+      .from("sessions")
+      .select("user_id")
+      .eq("token", sessionToken)
+      .gt("expires_at", new Date().toISOString())
+      .single()
 
-    if (sessions.length === 0 || sessions[0].role !== "instructor") {
+    if (!session) {
+      return Response.json({ error: "Invalid session" }, { status: 401 })
+    }
+
+    // Get user role
+    const { data: user } = await supabase
+      .from("users")
+      .select("role")
+      .eq("id", session.user_id)
+      .single()
+
+    if (!user || user.role !== "instructor") {
       return Response.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const instructorId = sessions[0].id
+    // Get instructor
+    const { data: instructor } = await supabase
+      .from("instructors")
+      .select("id")
+      .eq("user_id", session.user_id)
+      .single()
 
-    // Get reviews for this instructor (if reviews table exists)
     // For now, return empty array as reviews functionality needs to be built
     const reviews: unknown[] = []
 
     return Response.json({
       reviews,
-      reviewLink: `${process.env.NEXT_PUBLIC_APP_URL || ""}/review/${instructorId}`,
+      reviewLink: `${process.env.NEXT_PUBLIC_APP_URL || ""}/review/${instructor?.id || ""}`,
     })
   } catch (error) {
     console.error("Error fetching reviews:", error)

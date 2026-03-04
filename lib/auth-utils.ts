@@ -1,5 +1,5 @@
 import crypto from "crypto"
-import { sql } from "@/lib/db"
+import { createClient } from "@/lib/supabase/server"
 
 export function hashPassword(password: string): string {
   return crypto.createHash("sha256").update(password).digest("hex")
@@ -16,29 +16,39 @@ export function generateSessionToken(): string {
 export function generateInstructorCode(firstName: string, lastName: string): string {
   const firstInitial = firstName.charAt(0).toUpperCase()
   const lastInitial = lastName.charAt(0).toUpperCase()
-  // Use 6-digit random number for much better uniqueness (0-999999)
   const randomNum = Math.floor(Math.random() * 1000000)
   return `${firstInitial}${lastInitial}-${String(randomNum).padStart(6, "0")}`
 }
 
 export async function verifySession(sessionToken: string) {
   try {
-    const result = await sql`
-      SELECT s.id, s.user_id, u.role, u.email
-      FROM sessions s
-      JOIN users u ON s.user_id = u.id
-      WHERE s.token = ${sessionToken} AND s.expires_at > NOW()
-    `
+    const supabase = await createClient()
 
-    if (result.length === 0) {
-      console.log("[v0] Session verification failed: session not found or expired")
+    const { data: session, error: sessionError } = await supabase
+      .from("sessions")
+      .select("id, user_id, expires_at")
+      .eq("token", sessionToken)
+      .gt("expires_at", new Date().toISOString())
+      .single()
+
+    if (sessionError || !session) {
+      return null
+    }
+
+    const { data: user, error: userError } = await supabase
+      .from("users")
+      .select("id, role, email")
+      .eq("id", session.user_id)
+      .single()
+
+    if (userError || !user) {
       return null
     }
 
     return {
-      userId: result[0].user_id,
-      role: result[0].role,
-      email: result[0].email,
+      userId: user.id,
+      role: user.role,
+      email: user.email,
     }
   } catch (error) {
     console.error("[v0] Session verification error:", error)

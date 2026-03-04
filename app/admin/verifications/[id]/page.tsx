@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic"
 
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
 import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
@@ -10,41 +10,54 @@ import { ArrowLeft, Car, Phone, Mail, FileText, Shield } from "lucide-react"
 import { DocumentReviewActions } from "@/components/admin/document-review-actions"
 
 async function verifyAdmin(sessionToken: string) {
-  const sql = neon(process.env.DATABASE_URL!)
+  const supabase = await createClient()
 
-  const sessions = await sql`
-    SELECT u.id, u.role 
-    FROM sessions s 
-    JOIN users u ON s.user_id = u.id 
-    WHERE s.token = ${sessionToken} 
-    AND s.expires_at > NOW()
-    AND u.role = 'admin'
-  `
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("user_id")
+    .eq("token", sessionToken)
+    .gt("expires_at", new Date().toISOString())
+    .single()
 
-  return sessions.length > 0
+  if (!session) return false
+
+  const { data: user } = await supabase
+    .from("users")
+    .select("role")
+    .eq("id", session.user_id)
+    .eq("role", "admin")
+    .single()
+
+  return !!user
 }
 
 async function getInstructorDetails(id: string) {
-  const sql = neon(process.env.DATABASE_URL!)
+  const supabase = await createClient()
 
-  const [instructor] = await sql`
-    SELECT 
-      i.*,
-      u.email as user_email
-    FROM instructors i
-    LEFT JOIN users u ON u.id = i.id
-    WHERE i.id = ${id}
-  `
+  const { data: instructor } = await supabase
+    .from("instructors")
+    .select("*")
+    .eq("id", id)
+    .single()
 
   if (!instructor) return null
 
-  const documents = await sql`
-    SELECT * FROM instructor_documents 
-    WHERE instructor_id = ${id}
-    ORDER BY document_type
-  `
+  const { data: user } = await supabase
+    .from("users")
+    .select("email, name")
+    .eq("id", instructor.user_id)
+    .single()
 
-  return { instructor, documents }
+  const { data: documents } = await supabase
+    .from("instructor_documents")
+    .select("*")
+    .eq("instructor_id", id)
+    .order("document_type")
+
+  return { 
+    instructor: { ...instructor, user_email: user?.email, name: user?.name || instructor.name },
+    documents: documents || []
+  }
 }
 
 export default async function InstructorVerificationPage({ params }: { params: Promise<{ id: string }> }) {

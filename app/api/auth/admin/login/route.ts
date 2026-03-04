@@ -1,4 +1,4 @@
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 import { verifyPassword, generateSessionToken } from "@/lib/auth-utils"
 import { cookies } from "next/headers"
 
@@ -10,11 +10,15 @@ export async function POST(request: Request) {
       return Response.json({ error: "Email and password required" }, { status: 400 })
     }
 
-    const sql = neon(process.env.DATABASE_URL!)
+    const supabase = await createClient()
 
-    const users = await sql`SELECT id, password_hash, role FROM users WHERE email = ${email} AND role = 'admin'`
+    const { data: users } = await supabase
+      .from("users")
+      .select("id, password_hash, role")
+      .eq("email", email)
+      .eq("role", "admin")
 
-    if (users.length === 0) {
+    if (!users || users.length === 0) {
       return Response.json({ error: "Invalid credentials or not an admin" }, { status: 401 })
     }
 
@@ -27,7 +31,11 @@ export async function POST(request: Request) {
     const token = generateSessionToken()
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
-    await sql`INSERT INTO sessions (user_id, token, expires_at) VALUES (${user.id}, ${token}, ${expiresAt})`
+    await supabase.from("sessions").insert({
+      user_id: user.id,
+      token,
+      expires_at: expiresAt.toISOString(),
+    })
 
     const cookieStore = await cookies()
     cookieStore.set("drivecoach_session", token, {
@@ -38,8 +46,7 @@ export async function POST(request: Request) {
       path: "/",
     })
 
-    const response = Response.json({ success: true, role: "admin" }, { status: 200 })
-    return response
+    return Response.json({ success: true, role: "admin" }, { status: 200 })
   } catch (error) {
     console.error("[v0] Admin login error:", error)
     return Response.json({ error: "Login failed" }, { status: 500 })

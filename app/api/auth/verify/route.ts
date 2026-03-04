@@ -1,4 +1,4 @@
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 import { getSessionCookie } from "@/lib/session"
 
 export async function GET() {
@@ -9,27 +9,23 @@ export async function GET() {
       return Response.json({ authenticated: false }, { status: 401 })
     }
 
-    const sql = neon(process.env.DATABASE_URL!)
+    const supabase = await createClient()
 
-    const sessions = await sql`SELECT user_id, expires_at FROM sessions WHERE token = ${token}`
+    const { data: session } = await supabase.from("sessions").select("user_id, expires_at").eq("token", token).single()
 
-    if (sessions.length === 0) {
+    if (!session) {
       return Response.json({ authenticated: false }, { status: 401 })
     }
-
-    const session = sessions[0]
 
     if (new Date(session.expires_at) < new Date()) {
       return Response.json({ authenticated: false }, { status: 401 })
     }
 
-    const users = await sql`SELECT id, email, role FROM users WHERE id = ${session.user_id}`
+    const { data: user } = await supabase.from("users").select("id, email, role").eq("id", session.user_id).single()
 
-    if (users.length === 0) {
+    if (!user) {
       return Response.json({ authenticated: false }, { status: 401 })
     }
-
-    const user = users[0]
 
     return Response.json({
       authenticated: true,

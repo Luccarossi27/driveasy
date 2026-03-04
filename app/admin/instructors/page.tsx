@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic"
 
-import { neon } from "@neondatabase/serverless"
+import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import Link from "next/link"
@@ -9,39 +9,56 @@ import { Badge } from "@/components/ui/badge"
 import { ArrowLeft, Mail, Phone, Car, Calendar } from "lucide-react"
 
 async function verifyAdmin(sessionToken: string) {
-  const sql = neon(process.env.DATABASE_URL!)
+  const supabase = await createClient()
 
-  const sessions = await sql`
-    SELECT u.id, u.role 
-    FROM sessions s 
-    JOIN users u ON s.user_id = u.id 
-    WHERE s.token = ${sessionToken} 
-    AND s.expires_at > NOW()
-    AND u.role = 'admin'
-  `
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("user_id")
+    .eq("token", sessionToken)
+    .gt("expires_at", new Date().toISOString())
+    .single()
 
-  return sessions.length > 0
+  if (!session) return false
+
+  const { data: user } = await supabase
+    .from("users")
+    .select("role")
+    .eq("id", session.user_id)
+    .eq("role", "admin")
+    .single()
+
+  return !!user
 }
 
 async function getAllInstructors() {
-  const sql = neon(process.env.DATABASE_URL!)
+  const supabase = await createClient()
 
-  const instructors = await sql`
-    SELECT 
-      i.id,
-      i.name,
-      i.email,
-      i.phone,
-      i.car_type,
-      i.number_plate,
-      i.adi_license_number,
-      i.verification_status,
-      i.created_at
-    FROM instructors i
-    ORDER BY i.verification_status DESC, i.created_at DESC
-  `
+  const { data: instructors } = await supabase
+    .from("instructors")
+    .select("id, phone, car_type, number_plate, adi_license_number, verification_status, created_at, user_id")
+    .order("verification_status", { ascending: false })
+    .order("created_at", { ascending: false })
 
-  return instructors
+  if (!instructors) return []
+
+  // Get user details for each instructor
+  const enrichedInstructors = await Promise.all(
+    instructors.map(async (instructor) => {
+      const { data: user } = await supabase
+        .from("users")
+        .select("name, email")
+        .eq("id", instructor.user_id)
+        .single()
+
+      return {
+        ...instructor,
+        name: user?.name || "Unknown",
+        email: user?.email || "",
+      }
+    })
+  )
+
+  return enrichedInstructors
 }
 
 export default async function ManageInstructorsPage() {
