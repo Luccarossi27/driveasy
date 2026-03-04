@@ -1,19 +1,21 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Elements } from "@stripe/react-stripe-js"
-import type { Stripe } from "@stripe/stripe-js"
+import { loadStripe, type Stripe } from "@stripe/stripe-js/pure"
 import { CheckoutForm } from "@/components/stripe/checkout-form"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { DEFAULT_PACKAGES, formatPrice } from "@/lib/lesson-packages"
 
-// Lazy load Stripe to avoid script tag issues during SSR
-const getStripe = (): Promise<Stripe | null> => {
-  return import("@stripe/stripe-js").then((mod) =>
-    mod.loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "")
-  )
+// Use a singleton pattern to avoid recreating the Stripe promise
+let stripePromise: Promise<Stripe | null> | null = null
+const getStripe = () => {
+  if (!stripePromise) {
+    stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "")
+  }
+  return stripePromise
 }
 
 export function CheckoutPageClient() {
@@ -26,13 +28,13 @@ export function CheckoutPageClient() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [instructorName, setInstructorName] = useState("")
-  const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null)
+  const [stripe, setStripe] = useState<Stripe | null>(null)
 
   const selectedPackage = packageId ? DEFAULT_PACKAGES.find((p) => p.id === packageId) : null
 
   // Initialize Stripe on mount
   useEffect(() => {
-    setStripePromise(getStripe())
+    getStripe().then(setStripe)
   }, [])
 
   useEffect(() => {
@@ -119,7 +121,7 @@ export function CheckoutPageClient() {
     )
   }
 
-  if (!clientSecret || !stripePromise) {
+  if (!clientSecret || !stripe) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center space-y-4">
@@ -144,7 +146,7 @@ export function CheckoutPageClient() {
             <p className="text-muted-foreground">Secure checkout powered by Stripe</p>
           </div>
 
-          <Elements stripe={stripePromise} options={{ clientSecret }}>
+          <Elements stripe={stripe} options={{ clientSecret }}>
             <CheckoutForm
               clientSecret={clientSecret}
               packageName={selectedPackage.name}
